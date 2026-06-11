@@ -1,0 +1,252 @@
+/* ============================================================
+   Plumbing Job Card — core: tokens, base, buttons, badges, chrome
+   ============================================================ */
+
+
+/* ---------- tokens ---------- */
+.jc {
+  --font: 'Public Sans', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --bg: #eaedf1;
+  --stage: #e2e6eb;
+  --surface: #ffffff;
+  --surface-2: #f5f7f9;
+  --surface-3: #eef1f4;
+  --text: #14202e;
+  --text-muted: #586979;
+  --text-faint: #8392a1;
+  --border: #dde3e9;
+  --border-strong: #c5cdd6;
+
+  --primary: #1559d6;
+  --primary-press: #1149ad;
+  --primary-soft: #e6eefc;
+  --on-primary: #ffffff;
+
+  --draft: #5b6b7c;        --draft-bg: #eceff3;
+  --finished: #1d6fd6;     --finished-bg: #e3eefb;
+  --synced: #1c8a4c;       --synced-bg: #e1f3e9;
+  --failed: #ce2a2a;       --failed-bg: #fbe7e7;
+  --printed: #6a45cf;      --printed-bg: #ece5fa;
+  --warn: #b5710a;         --warn-bg: #fbf0dd;
+
+  --r: 16px;
+  --r-sm: 11px;
+  --r-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(20,32,46,.06), 0 1px 1px rgba(20,32,46,.04);
+  --shadow-2: 0 6px 20px rgba(20,32,46,.10);
+  --shadow-3: 0 18px 50px rgba(20,32,46,.18);
+  --tap: 52px;
+
+  font-family: var(--font);
+  color: var(--text);
+}
+
+.jc[data-theme='dark'] {
+  --bg: #0c1218;
+  --stage: #080d12;
+  --surface: #151f2a;
+  --surface-2: #1b2733;
+  --surface-3: #20303d;
+  --text: #e9eef3;
+  --text-muted: #98a7b6;
+  --text-faint: #65788a;
+  --border: #25323f;
+  --border-strong: #36475634;
+
+  --primary: #3f86f7;
+  --primary-press: #2f6ad1;
+  --primary-soft: #16263c;
+  --on-primary: #ffffff;
+
+  --draft: #9fb0c0;        --draft-bg: #1f2c39;
+  --finished: #62a3f3;     --finished-bg: #16273d;
+  --synced: #3fcc81;       --synced-bg: #102e1f;
+  --failed: #ff6363;       --failed-bg: #3a1717;
+  --printed: #ac90fb;      --printed-bg: #241a3d;
+  --warn: #e0a23a;         --warn-bg: #3a2c10;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-2: 0 6px 20px rgba(0,0,0,.5);
+  --shadow-3: 0 18px 50px rgba(0,0,0,.6);
+}
+
+.jc * { box-sizing: border-box; }
+.jc *::selection { background: var(--primary-soft); }
+
+/* ---------- typographic helpers ---------- */
+.label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.mono { font-family: var(--mono); font-feature-settings: 'zero' 1; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 1s linear infinite; transform-origin: 50% 50%; }
+
+/* ---------- buttons ---------- */
+.btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 600;
+  min-height: var(--tap);
+  padding: 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, border-color .12s, transform .04s, box-shadow .12s;
+  user-select: none;
+}
+.btn:active { transform: translateY(1px); }
+.btn svg { width: 19px; height: 19px; flex-shrink: 0; }
+
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary:hover { background: var(--primary-press); }
+.btn-primary:disabled { background: var(--surface-3); color: var(--text-faint); cursor: not-allowed; box-shadow: none; }
+
+.btn-ghost { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.btn-ghost:hover { background: var(--surface-2); }
+
+.btn-quiet { background: transparent; color: var(--text-muted); min-height: 44px; padding: 0 12px; }
+.btn-quiet:hover { background: var(--surface-2); color: var(--text); }
+
+.btn-danger { background: var(--failed); color: #fff; }
+.btn-danger:hover { filter: brightness(.94); }
+
+.btn-block { width: 100%; }
+.btn-lg { min-height: 58px; font-size: 17px; border-radius: 14px; }
+
+/* ---------- badges ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  padding: 5px 11px 5px 9px;
+  border-radius: var(--r-pill);
+  line-height: 1;
+  white-space: nowrap;
+}
+.badge .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.badge svg { width: 14px; height: 14px; }
+
+.s-draft    { color: var(--draft);    background: var(--draft-bg); }
+.s-finished { color: var(--finished); background: var(--finished-bg); }
+.s-synced   { color: var(--synced);   background: var(--synced-bg); }
+.s-failed   { color: var(--failed);   background: var(--failed-bg); }
+.s-printed  { color: var(--printed);  background: var(--printed-bg); }
+
+/* badge sizes */
+.badge-lg { font-size: 14px; padding: 7px 14px 7px 11px; }
+
+/* ---------- stage / presenter chrome ---------- */
+.jc {
+  min-height: 100vh;
+  background:
+    radial-gradient(120% 80% at 50% -10%, var(--bg), var(--stage));
+  display: flex;
+  flex-direction: column;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+.brand { display: flex; align-items: center; gap: 11px; }
+.brand-mark {
+  width: 34px; height: 34px; border-radius: 9px;
+  background: var(--primary); color: #fff;
+  display: grid; place-items: center;
+  box-shadow: var(--shadow-1);
+}
+.brand-mark svg { width: 20px; height: 20px; }
+.brand-name { font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
+.brand-sub { font-size: 12.5px; color: var(--text-faint); font-weight: 600; }
+
+.role-tabs {
+  display: flex;
+  gap: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+}
+.role-tab {
+  appearance: none; border: 0; background: transparent;
+  font-family: var(--font); font-size: 14px; font-weight: 600;
+  color: var(--text-muted);
+  padding: 9px 16px; border-radius: 9px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  transition: background .12s, color .12s;
+}
+.role-tab svg { width: 17px; height: 17px; }
+.role-tab:hover { color: var(--text); }
+.role-tab[aria-selected='true'] {
+  background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+.spacer { flex: 1; }
+
+.theme-toggle {
+  appearance: none; cursor: pointer;
+  width: 44px; height: 44px; border-radius: 11px;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text); display: grid; place-items: center;
+}
+.theme-toggle:hover { background: var(--surface-2); }
+.theme-toggle svg { width: 19px; height: 19px; }
+
+.conn-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600;
+  padding: 8px 13px; border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.conn-pill svg { width: 16px; height: 16px; }
+.conn-pill.online { color: var(--synced); border-color: color-mix(in srgb, var(--synced) 35%, var(--border)); }
+.conn-pill.offline { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); background: var(--warn-bg); }
+
+/* ---------- stage body ---------- */
+.stage-body {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 38px 24px 60px;
+  overflow: auto;
+}
+.stage-hint {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  font-size: 12.5px; color: var(--text-faint); font-weight: 600;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  padding: 7px 15px; backdrop-filter: blur(6px); z-index: 30;
+  display: flex; align-items: center; gap: 8px;
+}
+.kbd {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  background: var(--surface-3); border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px;
+}
