@@ -2,31 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
 import { analyzeJobCardImage } from '../services/documentIntelligence';
 import { createJob, patchJob, uploadImage } from '../services/storage';
-import { technicians } from '../data';
-import {
-  loadBethlehemOcrFieldConfig,
-  loadOcrFieldConfig,
-  resetOcrFieldConfig,
-  saveOcrFieldConfig,
-} from '../services/ocrFieldConfig';
+import { loadOcrFieldConfig } from '../services/ocrFieldConfig';
+import { matchTechnicians } from '../services/techMatcher';
 
 const ENDPOINT_KEY = 'tidewell.ocr.endpoint';
 const API_KEY_KEY = 'tidewell.ocr.key';
 const STAGED_DOCS_KEY = 'tidewell.ocr.stagedDocs.v1';
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
-function readLocal(key, fallback = '') {
-  try {
-    return localStorage.getItem(key) || fallback;
-  } catch (_) {
-    return fallback;
-  }
-}
-
-function writeLocal(key, value) {
-  try {
-    localStorage.setItem(key, value || '');
-  } catch (_) {}
+function readLocal(key) {
+  try { return localStorage.getItem(key) || ''; } catch { return ''; }
 }
 
 function makeId() {
@@ -97,13 +82,38 @@ function bboxText(points) {
   return points.map((p) => `(${Math.round(p.x)}, ${Math.round(p.y)})`).join(' ');
 }
 
+function isPdfMime(mime) {
+  return String(mime || '').toLowerCase() === 'application/pdf';
+}
+
+function isStorableScan(mime) {
+  return String(mime || '').startsWith('image/') || isPdfMime(mime);
+}
+
+/* Renders a staged source file: images as <img>, PDFs in an inline viewer. */
+function StagedPreview({ doc }) {
+  if (!doc) return null;
+  if (isPdfMime(doc.mimeType)) {
+    return (
+      <iframe
+        className="ocr-preview-pdf"
+        src={doc.dataUrl}
+        title={`Scan preview ${doc.fileName}`}
+      />
+    );
+  }
+  if (doc.mimeType.startsWith('image/')) {
+    return <img src={doc.dataUrl} alt={`Scan preview ${doc.fileName}`} />;
+  }
+  return (
+    <div className="ocr-preview-fallback">
+      <Icon name="file" size={26} />
+      <p>Preview unavailable for this file type.</p>
+    </div>
+  );
+}
+
 export default function OcrExtractionPanel({ job, onCreated }) {
-  const [endpoint, setEndpoint] = useState(() =>
-    readLocal(ENDPOINT_KEY, import.meta.env.VITE_AZURE_DOCINTEL_ENDPOINT || '')
-  );
-  const [apiKey, setApiKey] = useState(() =>
-    readLocal(API_KEY_KEY, import.meta.env.VITE_AZURE_DOCINTEL_API_KEY || '')
-  );
   const [stagedDocs, setStagedDocs] = useState(loadStagedDocs);
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -112,8 +122,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
   const [saveMessage, setSaveMessage] = useState('');
   const [isReviewFullscreen, setIsReviewFullscreen] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
-  const [showMappingConfig, setShowMappingConfig] = useState(false);
-  const [fieldConfig, setFieldConfig] = useState(() => loadOcrFieldConfig());
 
   useEffect(() => {
     try {
@@ -234,8 +242,11 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     setError('');
     setSaveMessage('');
 
-    if (!endpoint.trim() || !apiKey.trim()) {
-      setError('Enter Azure Document Intelligence endpoint and API key.');
+    const endpoint = readLocal(ENDPOINT_KEY);
+    const apiKey   = readLocal(API_KEY_KEY);
+
+    if (!endpoint || !apiKey) {
+      setError('Azure OCR endpoint and API key are not configured. Open Settings (gear icon) to add them.');
       return;
     }
 
@@ -248,8 +259,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     }
 
     setBusy(true);
-    writeLocal(ENDPOINT_KEY, endpoint.trim());
-    writeLocal(API_KEY_KEY, apiKey.trim());
 
     let successCount = 0;
     let errorCount = 0;
@@ -263,6 +272,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       try {
         const blob = dataUrlToBlob(item.dataUrl);
         const file = new File([blob], item.fileName, { type: item.mimeType });
+        const fieldConfig = loadOcrFieldConfig();
         const data = await analyzeJobCardImage({ endpoint, apiKey, file, fieldConfig });
         const nextEditedValues = Object.fromEntries(
           Object.entries(data?.parsed?.fields || {}).map(([key, field]) => [key, field.value || ''])
@@ -333,21 +343,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     return '';
   }
 
-  function findTechIdByName(name) {
-    const target = String(name || '').trim().toLowerCase();
-    if (!target) return '';
-
-    const entries = Object.values(technicians);
-    const exact = entries.find((tech) => tech.name.toLowerCase() === target);
-    if (exact) return exact.id;
-
-    const loose = entries.find((tech) => {
-      const n = tech.name.toLowerCase();
-      return target.includes(n) || n.includes(target);
-    });
-    return loose?.id || '';
-  }
-
   function deriveCustomerName(resultData) {
     const lines = resultData?.lines || [];
     const upper = lines.map((line) => String(line.content || '').trim());
@@ -365,7 +360,13 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const parsedDate = normalizeDate(fields.date?.value);
     const parsedStatus = normalizeStatus(fields.status?.value) || 'printed';
     const techId = 't1';
-    const assignedTo = String(fields.jobAssignedTo?.value || '').trim();
+    const rawAssignedTo = String(fields.jobAssignedTo?.value || '').trim();
+    let techList = [];
+    try {
+      const tr = await fetch('/api/technicians');
+      if (tr.ok) techList = await tr.json();
+    } catch {}
+    const assignedTo = matchTechnicians(rawAssignedTo, techList) || rawAssignedTo;
     const customerName = String(fields.customerName?.value || '').trim();
     const customerAddress = String(fields.customerAddress?.value || '').trim();
     const jobDone = String(fields.workDescription?.value || '').trim();
@@ -380,15 +381,17 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     setSaveMessage('');
 
     try {
-      // Save image to uploads/ folder before creating the job record.
+      // Upload scan (image or PDF) — OneDrive if configured, local folder otherwise.
       let imagePath = null;
-      if (selectedDoc.dataUrl && selectedDoc.mimeType?.startsWith('image/')) {
+      let oneDriveItemId = null;
+      if (selectedDoc.dataUrl && isStorableScan(selectedDoc.mimeType)) {
         try {
           const base64 = selectedDoc.dataUrl.split(',')[1] || '';
           const uploaded = await uploadImage(selectedDoc.fileName, base64, selectedDoc.mimeType);
-          imagePath = uploaded.filePath || null;
+          oneDriveItemId = uploaded.oneDriveItemId || null;
+          imagePath      = uploaded.filePath       || null;
         } catch (_) {
-          // Image upload failure is non-fatal; continue without it.
+          // Upload failure is non-fatal — continue without an attached image.
         }
       }
 
@@ -415,6 +418,8 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         printedAt: new Date().toLocaleString(),
         updated: 'Imported from OCR - awaiting admin recapture',
         imagePath,
+        oneDriveItemId,
+        scanMimeType: selectedDoc.mimeType || '',
         ocrImport: {
           at: new Date().toISOString(),
           sourceFileName: selectedDoc.fileName || '',
@@ -425,10 +430,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       });
 
       setSaveMessage(`Created capture record ${created.ref}. It is now in the recapture checklist queue.`);
-      updateDoc(selectedDoc.id, {
-        status: 'imported',
-        importedJobRef: created.ref || created.id,
-      });
+      removeStagedDoc(selectedDoc.id);
       setIsReviewFullscreen(false);
       onCreated?.(created);
     } catch (err) {
@@ -512,38 +514,8 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     }
   }
 
-  function updateFieldMatchers(fieldKey, text) {
-    const patterns = text
-      .split('\n')
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-    setFieldConfig((current) => ({
-      ...current,
-      [fieldKey]: {
-        ...(current[fieldKey] || {}),
-        keyMatchers: patterns,
-      },
-    }));
-  }
-
-  function handleSaveMappingConfig() {
-    const saved = saveOcrFieldConfig(fieldConfig);
-    setFieldConfig(saved);
-    setSaveMessage('Field mapping configuration saved. Next OCR run will use this mapping.');
-  }
-
-  function handleResetMappingConfig() {
-    const defaults = resetOcrFieldConfig();
-    setFieldConfig(defaults);
-    setSaveMessage('Field mapping configuration reset to defaults.');
-  }
-
-  function handleLoadBethlehemPreset() {
-    const preset = loadBethlehemOcrFieldConfig();
-    setFieldConfig(preset);
-    setSaveMessage('Bethlehem Plumbers preset loaded for key-value mapping.');
-  }
+  // Read field labels from saved config for use in the review tables.
+  const fieldConfig = useMemo(() => loadOcrFieldConfig(), []);
 
   return (
     <div className="panel">
@@ -553,52 +525,37 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       </div>
 
       <div className="ocr-body">
-        <div className="ocr-grid">
-          <label className="field-group ocr-field">
-            <span className="field-lbl">Endpoint URL</span>
-            <input
-              className="input"
-              placeholder="https://your-resource.cognitiveservices.azure.com"
-              value={endpoint}
-              onChange={(e) => setEndpoint(e.target.value)}
-            />
-          </label>
-
-          <label className="field-group ocr-field">
-            <span className="field-lbl">API key</span>
-            <input
-              className="input"
-              type="password"
-              placeholder="Azure Document Intelligence key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </label>
-        </div>
+        <label
+          className="tw-drop"
+          style={{ cursor: 'pointer', display: 'block' }}
+          onDrop={async (e) => { e.preventDefault(); try { await stageFiles(e.dataTransfer.files); } catch (err) { setError(err?.message || 'Could not stage files.'); } }}
+          onDragOver={(e) => e.preventDefault()}
+        >
+          <div className="ic">
+            <Icon name="file" size={26} />
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Drop job card scan here or click to browse</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>JPG · PNG · PDF</div>
+          <input
+            key={fileInputKey}
+            type="file"
+            accept="image/*,application/pdf"
+            multiple
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              try {
+                await stageFiles(e.target.files);
+              } catch (err) {
+                setError(err?.message || 'Could not stage selected files.');
+              }
+            }}
+          />
+        </label>
 
         <div className="ocr-upload-row">
-          <label className="btn btn-ghost" style={{ minHeight: 42, cursor: 'pointer' }}>
-            <Icon name="file" size={16} />
-            <span>Stage scanned files</span>
-            <input
-              key={fileInputKey}
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              style={{ display: 'none' }}
-              onChange={async (e) => {
-                try {
-                  await stageFiles(e.target.files);
-                } catch (err) {
-                  setError(err?.message || 'Could not stage selected files.');
-                }
-              }}
-            />
-          </label>
-
           <button
-            className="btn btn-primary"
-            disabled={busy || !stagedDocs.length || !endpoint.trim() || !apiKey.trim()}
+            className="tw-btn tw-btn--primary"
+            disabled={busy || !stagedDocs.length}
             onClick={runStagedExtraction}
           >
             {busy ? (
@@ -614,14 +571,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
             )}
           </button>
 
-          <button
-            className="btn btn-ghost"
-            type="button"
-            onClick={() => setShowMappingConfig((value) => !value)}
-          >
-            <Icon name="settings" size={16} />
-            <span>{showMappingConfig ? 'Hide mapping config' : 'Field mapping config'}</span>
-          </button>
         </div>
 
         <div className="ocr-summary-row">
@@ -643,16 +592,16 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           </div>
         </div>
 
-        <div className="ocr-stage-wrap">
-          <h3>Staged documents</h3>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Staged documents</div>
           {!stagedDocs.length ? (
-            <div className="empty-state" style={{ padding: '28px 18px' }}>
+            <div className="tw-empty">
               <Icon name="file" size={30} />
-              <p>Stage scanned files to build a review queue.</p>
+              <p style={{ marginTop: 10, fontWeight: 600 }}>Stage scanned files to build a review queue.</p>
             </div>
           ) : (
-            <div className="ocr-stage-table">
-              <table className="map-table">
+            <div className="tw-card" style={{ overflow: 'hidden' }}>
+              <table className="tw-table">
                 <thead>
                   <tr>
                     <th>File</th>
@@ -663,39 +612,45 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                 </thead>
                 <tbody>
                   {stagedDocs.map((item) => (
-                    <tr key={item.id}>
+                    <tr
+                      key={item.id}
+                      className={selectedDocId === item.id ? 'is-selected' : ''}
+                      onClick={() => setSelectedDocId(item.id)}
+                    >
                       <td>
-                        <div className="ocr-file-name">{item.fileName}</div>
-                        <div className="ocr-file-meta">{Math.max(1, Math.round(item.size / 1024))} KB</div>
+                        <div style={{ fontWeight: 600 }}>{item.fileName}</div>
+                        <div className="tw-muted" style={{ fontSize: 12 }}>{Math.max(1, Math.round(item.size / 1024))} KB</div>
                       </td>
                       <td>
-                        <span className={`ocr-doc-state ${item.status}`}>
-                          {item.status === 'ready' ? 'Ready' : item.status}
-                        </span>
+                        {item.status === 'imported' && <span className="st-badge st-imported">Imported</span>}
+                        {item.status === 'processing' && <span className="st-badge st-reading">Processing</span>}
+                        {item.status === 'error' && <span className="st-badge st-failed">Failed</span>}
+                        {item.status === 'ready' && <span className="st-badge st-imported">Ready</span>}
+                        {item.status === 'staged' && <span className="st-badge" style={{ background: 'var(--surface-3)', color: 'var(--ink-2)' }}>Staged</span>}
                         {item.importedJobRef && (
-                          <div className="ocr-file-meta">Imported as {item.importedJobRef}</div>
+                          <div className="tw-muted" style={{ fontSize: 11, marginTop: 2 }}>as {item.importedJobRef}</div>
                         )}
-                        {item.error && <div className="ocr-file-meta ocr-file-error">{item.error}</div>}
+                        {item.error && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 2 }}>{item.error}</div>}
                       </td>
-                      <td>{new Date(item.updatedAt).toLocaleString()}</td>
-                      <td>
+                      <td className="tw-muted" style={{ fontSize: 12 }}>{new Date(item.updatedAt).toLocaleString()}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <div className="ocr-row-actions">
                           <button
-                            className="btn btn-ghost"
+                            className="tw-btn tw-btn--sm"
                             type="button"
                             disabled={item.status !== 'ready'}
                             onClick={() => openReview(item.id)}
                           >
-                            <Icon name="checkCircle" size={14} />
-                            <span>Review full page</span>
+                            <Icon name="checkCircle" size={13} />
+                            Review
                           </button>
                           <button
-                            className="btn btn-ghost"
+                            className="tw-btn tw-btn--sm tw-btn--ghost"
                             type="button"
                             disabled={busy || saving}
                             onClick={() => removeStagedDoc(item.id)}
                           >
-                            <span>Remove</span>
+                            Remove
                           </button>
                         </div>
                       </td>
@@ -706,41 +661,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
             </div>
           )}
         </div>
-
-        {showMappingConfig && (
-          <div className="ocr-config panel" style={{ marginBottom: 0 }}>
-            <div className="panel-head" style={{ padding: '12px 14px' }}>
-              <h2 style={{ fontSize: 14 }}>Key-value pair mapping</h2>
-              <span className="ph-sub">One regex pattern per line</span>
-              <div style={{ flex: 1 }} />
-              <button className="btn btn-ghost" type="button" onClick={handleResetMappingConfig}>
-                <Icon name="refresh" size={14} />
-                <span>Reset</span>
-              </button>
-              <button className="btn btn-ghost" type="button" onClick={handleLoadBethlehemPreset}>
-                <Icon name="clipboard" size={14} />
-                <span>Load Bethlehem preset</span>
-              </button>
-              <button className="btn btn-primary" type="button" onClick={handleSaveMappingConfig}>
-                <Icon name="save" size={14} />
-                <span>Save mapping</span>
-              </button>
-            </div>
-            <div className="ocr-body" style={{ paddingTop: 10 }}>
-              {Object.entries(fieldConfig).map(([fieldKey, cfg]) => (
-                <label key={fieldKey} className="field-group ocr-field" style={{ marginBottom: 8 }}>
-                  <span className="field-lbl">{cfg.label || fieldKey}</span>
-                  <textarea
-                    className="ocr-edit-input ocr-edit-area"
-                    value={(cfg.keyMatchers || []).join('\n')}
-                    onChange={(e) => updateFieldMatchers(fieldKey, e.target.value)}
-                    placeholder="Add one regex key matcher per line"
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        )}
 
         {error && (
           <div className="ocr-alert danger">
@@ -782,14 +702,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                   <span className="ph-sub">Use this to validate date and customer fields</span>
                 </div>
                 <div className="ocr-preview-frame">
-                  {selectedDoc.mimeType.startsWith('image/') ? (
-                    <img src={selectedDoc.dataUrl} alt={`Scan preview ${selectedDoc.fileName}`} />
-                  ) : (
-                    <div className="ocr-preview-fallback">
-                      <Icon name="file" size={26} />
-                      <p>Preview unavailable for this file type in the mockup.</p>
-                    </div>
-                  )}
+                  <StagedPreview doc={selectedDoc} />
                 </div>
               </div>
 
@@ -934,14 +847,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                     <span className="ph-sub">Use this to validate date and customer fields</span>
                   </div>
                   <div className="ocr-preview-frame">
-                    {selectedDoc.mimeType.startsWith('image/') ? (
-                      <img src={selectedDoc.dataUrl} alt={`Scan preview ${selectedDoc.fileName}`} />
-                    ) : (
-                      <div className="ocr-preview-fallback">
-                        <Icon name="file" size={26} />
-                        <p>Preview unavailable for this file type in the mockup.</p>
-                      </div>
-                    )}
+                    <StagedPreview doc={selectedDoc} />
                   </div>
                 </div>
 

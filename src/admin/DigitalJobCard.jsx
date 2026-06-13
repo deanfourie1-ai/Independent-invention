@@ -1,115 +1,118 @@
 import { useState } from 'react';
 import Icon from '../components/Icon';
-import StatusBadge from '../components/StatusBadge';
 
 function displayValue(value) {
   const text = String(value ?? '').trim();
-  return text || '—';
+  return text || null;
 }
 
-function CopyCell({ value, copyKey, copied, onCopy }) {
-  return (
-    <button
-      type="button"
-      className="dj-copy"
-      onClick={() => onCopy(copyKey, value)}
-      title="Copy field value"
-      aria-label="Copy field value"
-    >
-      <Icon name={copied === copyKey ? 'check' : 'copy'} size={14} />
-    </button>
-  );
-}
-
-function Row({ label, value, copyKey, copied, onCopy, multiline = false }) {
+function CopyRow({ label, value, copyKey, copied, onCopy, multiline = false }) {
   const shown = displayValue(value);
   return (
-    <div className={'dj-row' + (multiline ? ' multiline' : '')}>
-      <div className="dj-k">{label}</div>
-      <div className={'dj-v' + (multiline ? ' para' : '')}>{shown}</div>
-      <CopyCell value={shown} copyKey={copyKey} copied={copied} onCopy={onCopy} />
+    <div className={'cap-row' + (multiline ? ' cap-row--wide' : '')}>
+      <div className="k">{label}</div>
+      <div className={'v' + (shown ? '' : ' empty') + (multiline ? ' multi' : '')}>
+        {shown || '—'}
+      </div>
+      <button
+        type="button"
+        className={'cap-copy' + (copied === copyKey ? ' ok' : '')}
+        onClick={() => onCopy(copyKey, shown || '')}
+        title="Copy field value"
+        aria-label="Copy field value"
+      >
+        <Icon name={copied === copyKey ? 'check' : 'copy'} size={13} />
+      </button>
     </div>
   );
 }
 
-function Section({ title, children }) {
+function Sec({ title, children }) {
   return (
-    <section className="dj-section">
-      <div className="dj-sec-label">{title}</div>
-      <div className="dj-block">{children}</div>
-    </section>
+    <div className="cap-sec">
+      <div className="cap-sec-head">{title}</div>
+      {children}
+    </div>
   );
 }
 
 export default function DigitalJobCard({ job }) {
   const [copied, setCopied] = useState(null);
   const completed = ['finished', 'synced', 'printed'].includes(job.status);
+  const jobId = job.ref || job.id;
 
   const callOutFee = job.charges?.callOutFee;
   const labour = job.charges?.labour;
   const otherCosts = job.charges?.materials;
   const additionalNotes = job.charges?.notes;
   const total = job.charges?.total;
-  const jobId = job.ref || job.id;
 
   function copyField(key, text) {
     try { navigator.clipboard?.writeText(String(text || '')); } catch (_) {}
     setCopied(key);
-    setTimeout(() => setCopied((current) => (current === key ? null : current)), 1300);
+    setTimeout(() => setCopied((c) => (c === key ? null : c)), 1300);
   }
 
   return (
-    <div className="panel capture-digital">
-      <div className="panel-head">
-        <h2>Digital job card</h2>
-        <span className="ph-sub">Copy directly from each field</span>
+    <div className="cap-card">
+      <div className="cap-card-head">
+        <span className="ttl">Digital job card</span>
+        <span className="hint">Copy directly from each field</span>
         <div style={{ flex: 1 }} />
-        <span className="dj-job-id">Job ID: {displayValue(jobId)}</span>
-        <StatusBadge status="printed" />
+        <span className="cap-jobid">Job ID: {jobId}</span>
+        <span className="cap-lock">
+          <Icon name="lock" size={11} />
+          Printed
+        </span>
       </div>
 
-      <div className="dj-body">
-        <section className="dj-section dj-section-split">
-          <div className="dj-split-grid">
-            <div>
-              <div className="dj-sec-label">Job details</div>
-              <div className="dj-block">
-                <Row label="Job assigned to" value={job.jobAssignedTo} copyKey="jobAssignedTo" copied={copied} onCopy={copyField} />
-                <Row label="Date" value={job.date} copyKey="date" copied={copied} onCopy={copyField} />
-                <Row label="Job duration" value={job.duration} copyKey="duration" copied={copied} onCopy={copyField} />
-                <Row label="Job completed" value={completed ? 'Yes' : 'No'} copyKey="completed" copied={copied} onCopy={copyField} />
-                <Row label="Casual labour no" value={job.casualLabourNo} copyKey="casualLabourNo" copied={copied} onCopy={copyField} />
-              </div>
-            </div>
+      <div className="cap-body">
+        {/* two-column top section */}
+        <div className="cap-2col">
+          <Sec title="Job details">
+            <CopyRow label="Assigned to"  value={job.jobAssignedTo}  copyKey="jobAssignedTo"  copied={copied} onCopy={copyField} />
+            <CopyRow label="Date"         value={job.date}           copyKey="date"            copied={copied} onCopy={copyField} />
+            <CopyRow label="Duration"     value={job.duration}       copyKey="duration"        copied={copied} onCopy={copyField} />
+            <CopyRow label="Completed"    value={completed ? 'Yes' : 'No'} copyKey="completed" copied={copied} onCopy={copyField} />
+            <CopyRow label="Casual labour no" value={job.casualLabourNo} copyKey="casualLabourNo" copied={copied} onCopy={copyField} />
+          </Sec>
 
-            <div>
-              <div className="dj-sec-label">Client details</div>
-              <div className="dj-block">
-                <Row label="Name" value={job.customer?.name} copyKey="customerName" copied={copied} onCopy={copyField} />
-                <Row label="Address" value={job.customer?.address} copyKey="customerAddress" copied={copied} onCopy={copyField} multiline />
-                <Row label="Contact person" value={job.customer?.contactPerson} copyKey="contactPerson" copied={copied} onCopy={copyField} />
-                <Row label="Tel number" value={job.customer?.phone} copyKey="phone" copied={copied} onCopy={copyField} />
-                <Row label="Email address" value={job.customer?.email} copyKey="email" copied={copied} onCopy={copyField} />
-              </div>
-            </div>
+          <Sec title="Client details">
+            <CopyRow label="Name"           value={job.customer?.name}          copyKey="customerName"    copied={copied} onCopy={copyField} />
+            <CopyRow label="Address"        value={job.customer?.address}       copyKey="customerAddress" copied={copied} onCopy={copyField} multiline />
+            <CopyRow label="Contact"        value={job.customer?.contactPerson} copyKey="contactPerson"   copied={copied} onCopy={copyField} />
+            <CopyRow label="Tel"            value={job.customer?.phone}         copyKey="phone"           copied={copied} onCopy={copyField} />
+            <CopyRow label="Email"          value={job.customer?.email}         copyKey="email"           copied={copied} onCopy={copyField} />
+          </Sec>
+        </div>
+
+        <Sec title="Description of work done">
+          <CopyRow label="Job done" value={job.jobDone} copyKey="jobDone" copied={copied} onCopy={copyField} multiline />
+        </Sec>
+
+        <Sec title="Cost / breakdown">
+          <div className="cap-cost">
+            <span className="lab">Call-out fee</span>
+            <span className="amt">{callOutFee || '—'}</span>
+            <span className="lab">Labour</span>
+            <span className="amt">{labour || '—'}</span>
+            <span className="lab">Other costs</span>
+            <span className="amt">{otherCosts || '—'}</span>
+            {total && (
+              <>
+                <span className="lab tot">Total</span>
+                <span className="amt tot">{total}</span>
+              </>
+            )}
           </div>
-        </section>
+          {additionalNotes && (
+            <CopyRow label="Notes" value={additionalNotes} copyKey="additionalNotes" copied={copied} onCopy={copyField} multiline />
+          )}
+        </Sec>
 
-        <Section title="Description of work done">
-          <Row label="Job done" value={job.jobDone} copyKey="jobDone" copied={copied} onCopy={copyField} multiline />
-        </Section>
-
-        <Section title="Cost / breakdown">
-          <Row label="Call-out fee" value={callOutFee} copyKey="callOutFee" copied={copied} onCopy={copyField} />
-          <Row label="Labour" value={labour} copyKey="labour" copied={copied} onCopy={copyField} />
-          <Row label="Other costs" value={otherCosts} copyKey="otherCosts" copied={copied} onCopy={copyField} />
-          <Row label="Additional notes" value={additionalNotes} copyKey="additionalNotes" copied={copied} onCopy={copyField} multiline />
-          <Row label="Total" value={total} copyKey="total" copied={copied} onCopy={copyField} />
-        </Section>
-
-        <Section title="Materials used">
-          <Row label="Materials" value={job.materials} copyKey="materials" copied={copied} onCopy={copyField} multiline />
-        </Section>
+        <Sec title="Materials used">
+          <CopyRow label="Materials" value={job.materials} copyKey="materials" copied={copied} onCopy={copyField} multiline />
+        </Sec>
       </div>
     </div>
   );

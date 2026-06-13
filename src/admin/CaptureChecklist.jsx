@@ -14,6 +14,7 @@ export default function CaptureChecklist({
   const done = progress || {};
   const doneCount = active.reduce((n, t) => n + (done[t.id] ? 1 : 0), 0);
   const complete = active.length > 0 && doneCount === active.length;
+
   const [invoiceDraft, setInvoiceDraft] = useState(job?.invoiceNumber || '');
   const [invoiceCustomerDraft, setInvoiceCustomerDraft] = useState(
     job?.invoiceCustomer || job?.customer?.name || ''
@@ -36,80 +37,95 @@ export default function CaptureChecklist({
   }
 
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <h2>Capture checklist</h2>
-        <span className="ph-sub">Set by administrator</span>
-        <div style={{ flex: 1 }} />
-        <span className={'badge badge-lg ' + (complete ? 's-synced' : 's-finished')}>
-          <Icon name="check" size={15} stroke={3} />
-          <span>{doneCount}/{active.length}</span>
+    <div className="cap-check">
+      <div className="cap-check-head">
+        <div>
+          <div className="ttl">Capture checklist</div>
+          <div className="by">Set by administrator</div>
+        </div>
+        <span className={'cap-cbadge' + (complete ? ' done' : '')}>
+          <Icon name="check" size={12} stroke={3} />
+          {doneCount}/{active.length}
         </span>
       </div>
 
-      <div className="checklist-admin">
-        {active.map((t) => (
-          <div
-            key={t.id}
-            className={'cl-item' + (done[t.id] ? ' done' : '')}
-            onClick={() => onToggle(t.id)}
-          >
-            <div className="cl-box">
-              <Icon name="check" size={15} stroke={3} />
+      <div className="cap-check-body">
+        {/* checklist items */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {active.map((t) => (
+            <div
+              key={t.id}
+              className="cap-citem"
+              onClick={() => onToggle(t.id)}
+              role="checkbox"
+              aria-checked={!!done[t.id]}
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(t.id); }}
+            >
+              <div className={'cap-cbox' + (done[t.id] ? ' on' : '')}>
+                <Icon name="check" size={12} stroke={3} />
+              </div>
+              <span
+                className="lbl"
+                style={done[t.id] ? { textDecoration: 'line-through', color: 'var(--ink-3)' } : {}}
+              >
+                {t.text}
+              </span>
             </div>
-            <div className="cl-label">{t.text}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      <div className="invoice-ref-box">
-        <div className="invoice-ref-head">
-          <h3>Invoice reference</h3>
-          <span className="ph-sub">Capture invoice customer and invoice number for this job</span>
-        </div>
-        <div className="field-group" style={{ marginBottom: 10 }}>
-          <span className="field-lbl">Invoice customer</span>
-          <input
-            className="input"
-            placeholder="Defaults to customer name"
-            value={invoiceCustomerDraft}
-            onChange={(e) => setInvoiceCustomerDraft(e.target.value)}
-            disabled={!complete || savingInvoice}
-          />
-        </div>
-        <div className="field-group" style={{ marginBottom: 10 }}>
-          <span className="field-lbl">Invoice number</span>
-        </div>
-        <div className="invoice-ref-row">
-          <input
-            className="input"
-            placeholder="e.g. INV-10427"
-            value={invoiceDraft}
-            onChange={(e) => setInvoiceDraft(e.target.value)}
-            disabled={!complete || savingInvoice}
-          />
-          <button
-            className="btn btn-ghost"
-            type="button"
-            onClick={saveInvoiceRef}
-            disabled={!complete || savingInvoice}
-            style={{ minHeight: 44 }}
-          >
-            <Icon name="save" size={15} />
-            <span>{savingInvoice ? 'Saving...' : 'Save invoice'}</span>
-          </button>
-        </div>
-      </div>
+        {/* invoice reference */}
+        <div className="cap-invref">
+          <div className="h">Invoice reference</div>
+          <div className="d">Capture invoice customer and invoice number for this job</div>
 
-      {complete && (
-        <div style={{ padding: '0 16px 16px' }}>
-          <button className="btn btn-primary btn-block" style={{ minHeight: 46 }} onClick={onNext}>
-            {hasNext
-              ? <><span>Next order</span><Icon name="arrowRight" size={17} /></>
-              : <><Icon name="check" size={17} stroke={3} /><span>Finish up</span></>}
-          </button>
+          <label style={{ display: 'block', marginBottom: 10 }}>
+            <span className="cap-lbl">Invoice customer</span>
+            <input
+              className="cap-input"
+              placeholder="Defaults to customer name"
+              value={invoiceCustomerDraft}
+              onChange={(e) => setInvoiceCustomerDraft(e.target.value)}
+              disabled={savingInvoice}
+            />
+          </label>
+
+          <label style={{ display: 'block', marginBottom: 10 }}>
+            <span className="cap-lbl">Invoice number</span>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 9 }}>
+              <input
+                className="cap-input"
+                placeholder="e.g. INV-10427"
+                value={invoiceDraft}
+                onChange={(e) => setInvoiceDraft(e.target.value)}
+                disabled={savingInvoice}
+              />
+              <button
+                className="tw-btn cap-savebtn"
+                type="button"
+                onClick={saveInvoiceRef}
+                disabled={savingInvoice}
+              >
+                <Icon name="save" size={14} />
+                {savingInvoice ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </label>
         </div>
-      )}
+
+        {/* finish button */}
+        <button
+          className="tw-btn tw-btn--primary cap-finish"
+          onClick={onNext}
+          disabled={!complete}
+          title={complete ? undefined : 'Tick all checklist items first'}
+        >
+          {hasNext
+            ? <><span>Next order</span><Icon name="arrowRight" size={17} /></>
+            : <><Icon name="check" size={17} stroke={3} /><span>Finish up</span></>}
+        </button>
+      </div>
     </div>
   );
 }

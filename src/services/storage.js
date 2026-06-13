@@ -70,6 +70,8 @@ export async function createJob(patch) {
     priority: Boolean(patch.priority),
     ocrImport: patch.ocrImport || null,
     imagePath: patch.imagePath || null,
+    oneDriveItemId: patch.oneDriveItemId || null,
+    scanMimeType: patch.scanMimeType || '',
     updatedAt: nowIso(),
   };
 

@@ -6,3 +6,7 @@ dist/
 # Local runtime data — not source code
 data/
 uploads/
+
+# Build intermediates
+server.cjs
+release/

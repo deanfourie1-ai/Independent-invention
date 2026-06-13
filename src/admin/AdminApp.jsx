@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Icon from '../components/Icon';
 import Worklist from './Worklist';
 import CaptureChecklist from './CaptureChecklist';
 import ChecklistConfig from './ChecklistConfig';
+import SettingsPanel from './SettingsPanel';
 import CheerScreen from './CheerScreen';
 import OcrExtractionPanel from './OcrExtractionPanel';
 import DigitalJobCard from './DigitalJobCard';
+import HistoryPanel from './HistoryPanel';
+import DetailDrawer from './DetailDrawer';
 import useAdminJobs from '../hooks/useAdminJobs';
 import { deleteJob as deleteStoredJob, patchJob } from '../services/storage';
 
@@ -50,17 +53,82 @@ const DELETE_REASON_CODES = [
   { code: 'wrong_queue', label: 'Wrongly added to capture queue' },
 ];
 
+const TABS = [
+  { id: 'ocr',     icon: 'file',      label: 'OCR' },
+  { id: 'capture', icon: 'clipboard', label: 'Capture' },
+  { id: 'history', icon: 'clock',     label: 'History' },
+];
+
+function Brand() {
+  return (
+    <div className="tw-brand">
+      <div className="tw-logo">
+        <Icon name="droplet" size={18} />
+      </div>
+      <div>
+        <div className="tw-brand-name">Jobtool</div>
+        <div className="tw-brand-sub">Admin recapture</div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsMenu({ onEditChecklist, onExport, onOpenSettings, exporting, canExport }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function close(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  return (
+    <div className="tw-menu-wrap" ref={ref}>
+      <button className="tw-btn tw-icbtn" onClick={() => setOpen((o) => !o)} aria-label="Settings">
+        <Icon name="settings" size={17} />
+      </button>
+      {open && (
+        <div className="tw-menu">
+          <button type="button" onClick={() => { onEditChecklist(); setOpen(false); }}>
+            <Icon name="edit" size={16} />
+            Edit checklist
+          </button>
+          <div className="sep" />
+          <button
+            type="button"
+            onClick={() => { onExport(); setOpen(false); }}
+            disabled={!canExport || exporting}
+          >
+            <Icon name="file" size={16} />
+            {exporting ? 'Exporting...' : 'Export completed jobs'}
+          </button>
+          <div className="sep" />
+          <button type="button" onClick={() => { onOpenSettings(); setOpen(false); }}>
+            <Icon name="settings" size={16} />
+            Settings
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminApp() {
   const { ready, jobs } = useAdminJobs();
   const printed = jobs.filter((j) => j.status === 'printed');
 
   const [tasks, setTasks] = useState(loadTasks);
   const [progress, setProgress] = useState(loadProgress);
-  const [view, setView] = useState('work'); // 'work' | 'config'
-  const [tab, setTab] = useState('capture'); // 'capture' | 'ocr'
+  const [view, setView] = useState('work');
+  const [tab, setTab] = useState('capture');
   const [selId, setSelId] = useState(null);
   const [reviewing, setReviewing] = useState(false);
   const [showCaptured, setShowCaptured] = useState(false);
+  const [historyRow, setHistoryRow] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteReason, setDeleteReason] = useState(DELETE_REASON_CODES[0].code);
   const [deleteNotes, setDeleteNotes] = useState('');
@@ -79,7 +147,6 @@ export default function AdminApp() {
   const outstanding = printed.filter((j) => !isComplete(progress[j.id], tasks));
   const captured = printed.filter((j) => isComplete(progress[j.id], tasks));
 
-  // Resolve selected job
   const selValid = selId && printed.some((j) => j.id === selId);
   const job = printed.length === 0
     ? null
@@ -98,14 +165,16 @@ export default function AdminApp() {
     );
   }
 
+  if (view === 'settings') {
+    return <SettingsPanel onBack={() => setView('work')} />;
+  }
+
   if (!ready) {
     return (
-      <div className="desk">
-        <div className="desk-body">
-          <div className="empty-state">
-            <Icon name="sync" size={36} className="spin" />
-            <p>Loading recapture queue...</p>
-          </div>
+      <div className="tw" style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center', color: 'var(--ink-2)' }}>
+          <Icon name="sync" size={36} className="spin" />
+          <p style={{ marginTop: 12, fontWeight: 600 }}>Loading recapture queue...</p>
         </div>
       </div>
     );
@@ -116,10 +185,12 @@ export default function AdminApp() {
 
   function toggleTask(taskId) {
     if (!job) return;
-    setProgress((p) => ({
-      ...p,
-      [job.id]: { ...(p[job.id] || {}), [taskId]: !(p[job.id]?.[taskId]) },
-    }));
+    const current = progress[job.id] || {};
+    const newRec = { ...current, [taskId]: !current[taskId] };
+    setProgress((p) => ({ ...p, [job.id]: newRec }));
+    if (isComplete(newRec, tasks) && !job.capturedAt) {
+      patchJob(job.id, { capturedAt: new Date().toISOString() });
+    }
   }
 
   function goNext() {
@@ -164,13 +235,11 @@ export default function AdminApp() {
         'Invoice customer': item.invoiceCustomer || item.customer?.name || '',
         'Invoice number': item.invoiceNumber || '',
       }));
-
       const workbook = xlsx.utils.book_new();
       const worksheet = xlsx.utils.json_to_sheet(rows, {
         header: ['ID', 'Date', 'Name', 'Invoice customer', 'Invoice number'],
       });
       xlsx.utils.book_append_sheet(workbook, worksheet, 'Completed Jobs');
-
       const stamp = new Date().toISOString().slice(0, 10);
       xlsx.writeFileXLSX(workbook, `captured-jobs-${stamp}.xlsx`);
     } finally {
@@ -200,7 +269,6 @@ export default function AdminApp() {
       setDeleteError('Select a reason code before deleting this card.');
       return;
     }
-
     setDeleting(true);
     setDeleteError('');
     try {
@@ -223,148 +291,122 @@ export default function AdminApp() {
     }
   }
 
-  const queueClear = outstanding.length === 0;
-
   return (
-    <div className="desk">
-      <div className="desk-head">
-        <div style={{ flex: 1 }}>
-          <h1>Admin recapture</h1>
-          <div className="dh-sub">Printed card → Sage Online · same labels both sides</div>
-        </div>
-        <button className="btn btn-ghost" style={{ minHeight: 42 }} onClick={() => setView('config')}>
-          <Icon name="settings" size={18} /> Edit checklist
-        </button>
-        <button
-          className="btn btn-ghost"
-          style={{ minHeight: 42 }}
-          onClick={exportCompletedJobs}
-          disabled={!captured.length || exporting}
-          title={captured.length ? 'Export completed jobs to Excel' : 'No completed jobs to export'}
-        >
-          <Icon name="file" size={16} /> {exporting ? 'Exporting...' : 'Export completed jobs'}
-        </button>
-        <div className="admin-mode-tabs" role="tablist" aria-label="Admin work mode">
-          <button
-            className="admin-mode-tab"
-            aria-selected={tab === 'capture'}
-            onClick={() => setTab('capture')}
-          >
-            Capture
-          </button>
-          <button
-            className="admin-mode-tab"
-            aria-selected={tab === 'ocr'}
-            onClick={() => setTab('ocr')}
-          >
-            OCR
-          </button>
-        </div>
-        <span
-          className={'conn-pill' + (queueClear ? ' online' : '')}
-          style={{ cursor: 'default' }}
-        >
-          <Icon name="inbox" size={16} />
-          <span>{outstanding.length} to capture</span>
-        </span>
+    <div className="tw">
+      {/* brand topbar */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 22px', background:'var(--surface)', borderBottom:'1px solid var(--line)', flexShrink:0 }}>
+        <Brand />
+        <SettingsMenu
+          onEditChecklist={() => setView('config')}
+          onExport={exportCompletedJobs}
+          onOpenSettings={() => setView('settings')}
+          exporting={exporting}
+          canExport={captured.length > 0}
+        />
       </div>
 
-      <div className="desk-body">
-        {tab === 'capture' && (
-          <>
-            {printed.length === 0 ? (
-              <div className="empty-state">
-                <Icon name="inbox" size={40} />
-                <p>No printed cards waiting for capture.</p>
-                <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={() => setTab('ocr')}>
-                  <Icon name="file" size={16} /> Open OCR tab
-                </button>
-              </div>
-            ) : outstanding.length === 0 && !reviewing ? (
-              <CheerScreen
-                captured={captured.length}
-                onReview={() => {
-                  setReviewing(true);
-                  setShowCaptured(true);
-                  setSelId(captured[0]?.id ?? null);
-                }}
-              />
-            ) : (
-              <div className="work-grid">
-                <Worklist
-                  outstanding={outstanding}
-                  captured={captured}
-                  tasks={tasks}
-                  progress={progress}
-                  selectedId={job?.id}
-                  onSelect={selectJob}
-                  showCaptured={showCaptured}
-                  onToggleCaptured={() => setShowCaptured((s) => !s)}
-                  onDeleteOutstanding={openDeleteDialog}
-                />
+      {/* page heading + tabs */}
+      <div style={{ padding:'16px 22px 0', flexShrink:0 }}>
+        <h1 className="tw-h1">Admin recapture</h1>
+        <div className="tw-sub">Printed card → Sage Online · same labels both sides</div>
+        <div className="tw-tabs" style={{ borderBottom:'1px solid var(--line)', paddingBottom:0, gap:6, marginTop:14 }}>
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={'tw-tab' + (tab === t.id ? ' is-active' : '')}
+              style={{ borderRadius:'9px 9px 0 0', marginBottom:-1 }}
+              onClick={() => setTab(t.id)}
+            >
+              <Icon name={t.icon} size={16} />
+              {t.label}
+              {t.id === 'capture' && outstanding.length > 0 && (
+                <span className="tw-count tw-count--alert">{outstanding.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
 
-                <div className="work-main">
-                  {job && (
-                    <>
-                      {jobComplete && (
-                        <div className="success-ribbon">
-                          <div className="sr-ic"><Icon name="checkCircle" size={20} /></div>
-                          <div style={{ flex: 1 }}>
-                            <div className="sr-title">Captured into Sage Online</div>
-                            <div className="sr-sub">{job.customer.name} · {job.ref} is fully entered.</div>
-                          </div>
-                          <button className="btn btn-primary" style={{ minHeight: 44 }} onClick={goNext}>
-                            {outstanding.length > 1
-                              ? <><span>Next order</span><Icon name="arrowRight" size={17} /></>
-                              : <><Icon name="check" size={17} stroke={3} /><span>Finish up</span></>}
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="capture-layout">
-                        <DigitalJobCard job={job} />
-
-                        <div className="capture-checklist-col">
-                          <CaptureChecklist
-                            job={job}
-                            tasks={tasks}
-                            progress={jobRec}
-                            onToggle={toggleTask}
-                            onSaveInvoice={saveInvoiceNumber}
-                            onNext={goNext}
-                            hasNext={outstanding.length > 1}
-                          />
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
+      {/* scrollable body */}
+      <div style={{ flex:1, overflow:'auto', padding:'18px 22px 22px' }}>
         {tab === 'ocr' && (
-          <div className="work-grid">
-            <Worklist
-              outstanding={outstanding}
-              captured={captured}
-              tasks={tasks}
-              progress={progress}
-              selectedId={job?.id}
-              onSelect={selectJob}
-              showCaptured={showCaptured}
-              onToggleCaptured={() => setShowCaptured((s) => !s)}
-              onDeleteOutstanding={openDeleteDialog}
-            />
+          <OcrExtractionPanel job={job} onCreated={handleOcrCreated} />
+        )}
 
-            <div className="work-main">
-              <OcrExtractionPanel job={job} onCreated={handleOcrCreated} />
+        {tab === 'capture' && (
+          printed.length === 0 ? (
+            <div className="tw-empty">
+              <Icon name="inbox" size={40} />
+              <p style={{ margin:'12px 0 16px', fontWeight:600 }}>No printed cards waiting for capture.</p>
+              <button className="tw-btn tw-btn--primary" onClick={() => setTab('ocr')}>
+                <Icon name="file" size={16} /> Open OCR tab
+              </button>
             </div>
-          </div>
+          ) : outstanding.length === 0 && !reviewing ? (
+            <CheerScreen
+              captured={captured.length}
+              onReview={() => {
+                setReviewing(true);
+                setShowCaptured(true);
+                setSelId(captured[0]?.id ?? null);
+              }}
+            />
+          ) : (
+            <div className="cap-wrap">
+              <Worklist
+                outstanding={outstanding}
+                captured={captured}
+                tasks={tasks}
+                progress={progress}
+                selectedId={job?.id}
+                onSelect={selectJob}
+                showCaptured={showCaptured}
+                onToggleCaptured={() => setShowCaptured((s) => !s)}
+                onDeleteOutstanding={openDeleteDialog}
+              />
+
+              <div>
+                {jobComplete && (
+                  <div className="cap-success">
+                    <div className="sr-ic"><Icon name="checkCircle" size={20} /></div>
+                    <div style={{ flex:1 }}>
+                      <div className="sr-title">Captured into Sage Online</div>
+                      <div className="sr-sub">{job.customer.name} · {job.ref} is fully entered.</div>
+                    </div>
+                    <button className="tw-btn tw-btn--primary" onClick={goNext}>
+                      {outstanding.length > 1
+                        ? <><span>Next order</span><Icon name="arrowRight" size={17} /></>
+                        : <><Icon name="check" size={17} stroke={3} /><span>Finish up</span></>}
+                    </button>
+                  </div>
+                )}
+                {job && <DigitalJobCard job={job} />}
+              </div>
+
+              {job && (
+                <CaptureChecklist
+                  job={job}
+                  tasks={tasks}
+                  progress={jobRec}
+                  onToggle={toggleTask}
+                  onSaveInvoice={saveInvoiceNumber}
+                  onNext={goNext}
+                  hasNext={outstanding.length > 1}
+                />
+              )}
+            </div>
+          )
+        )}
+
+        {tab === 'history' && (
+          <HistoryPanel jobs={jobs} onRowSelect={setHistoryRow} />
         )}
       </div>
 
+      {/* slide-in drawer for history */}
+      <DetailDrawer row={historyRow} onClose={() => setHistoryRow(null)} />
+
+      {/* delete modal */}
       {deleteTarget && (
         <div className="admin-modal-scrim" role="presentation" onClick={closeDeleteDialog}>
           <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
@@ -377,7 +419,6 @@ export default function AdminApp() {
             <p className="admin-modal-sub">
               This removes <span className="mono">{deleteTarget.ref}</span> from admin recapture. Choose a reason code.
             </p>
-
             <label className="field-group" style={{ marginBottom: 12 }}>
               <span className="field-lbl">Reason code</span>
               <select className="select" value={deleteReason} onChange={(e) => setDeleteReason(e.target.value)}>
@@ -386,7 +427,6 @@ export default function AdminApp() {
                 ))}
               </select>
             </label>
-
             <label className="field-group" style={{ marginBottom: 10 }}>
               <span className="field-lbl">Notes (optional)</span>
               <textarea
@@ -396,14 +436,12 @@ export default function AdminApp() {
                 onChange={(e) => setDeleteNotes(e.target.value)}
               />
             </label>
-
             {deleteError && (
               <div className="ocr-alert danger" style={{ marginBottom: 10 }}>
                 <Icon name="alertCircle" size={16} />
                 <span>{deleteError}</span>
               </div>
             )}
-
             <div className="admin-modal-actions">
               <button className="btn btn-ghost" type="button" onClick={closeDeleteDialog} disabled={deleting}>
                 Cancel

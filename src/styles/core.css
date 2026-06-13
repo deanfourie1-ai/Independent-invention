@@ -2,74 +2,112 @@
    Plumbing Job Card — core: tokens, base, buttons, badges, chrome
    ============================================================ */
 
+/* ---------- global height reset ---------- */
+html, body { height: 100%; margin: 0; }
+#root { height: 100%; display: flex; flex-direction: column; }
 
 /* ---------- tokens ---------- */
 .jc {
-  --font: 'Public Sans', system-ui, -apple-system, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font: 'Public Sans', system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, "SF Mono", Menlo, monospace;
 
-  --bg: #eaedf1;
-  --stage: #e2e6eb;
-  --surface: #ffffff;
-  --surface-2: #f5f7f9;
-  --surface-3: #eef1f4;
-  --text: #14202e;
-  --text-muted: #586979;
-  --text-faint: #8392a1;
-  --border: #dde3e9;
-  --border-strong: #c5cdd6;
+  /* surfaces */
+  --bg:        #eef1f5;
+  --stage:     #e2e6eb;
+  --surface:   #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eef2f6;
 
-  --primary: #1559d6;
-  --primary-press: #1149ad;
-  --primary-soft: #e6eefc;
-  --on-primary: #ffffff;
+  /* lines / borders */
+  --line:        #e3e8ee;
+  --line-strong: #d4dbe3;
+  --line-hover:  #c2cad4;
+  --border:      var(--line);
+  --border-strong: var(--line-strong);
 
-  --draft: #5b6b7c;        --draft-bg: #eceff3;
-  --finished: #1d6fd6;     --finished-bg: #e3eefb;
-  --synced: #1c8a4c;       --synced-bg: #e1f3e9;
-  --failed: #ce2a2a;       --failed-bg: #fbe7e7;
-  --printed: #6a45cf;      --printed-bg: #ece5fa;
-  --warn: #b5710a;         --warn-bg: #fbf0dd;
+  /* ink / text */
+  --ink:        #1b2430;
+  --ink-2:      #5a6675;
+  --ink-3:      #8a94a3;
+  --on-color:   #ffffff;
+  --text:       var(--ink);
+  --text-muted: var(--ink-2);
+  --text-faint: var(--ink-3);
+  --on-primary: var(--on-color);
 
-  --r: 16px;
-  --r-sm: 11px;
-  --r-pill: 999px;
-  --shadow-1: 0 1px 2px rgba(20,32,46,.06), 0 1px 1px rgba(20,32,46,.04);
-  --shadow-2: 0 6px 20px rgba(20,32,46,.10);
-  --shadow-3: 0 18px 50px rgba(20,32,46,.18);
+  /* brand */
+  --brand:        #1f6fe0;
+  --brand-ink:    #1a5fc4;
+  --brand-bg:     #eaf2fe;
+  --brand-grad-1: #2f7bef;
+  --brand-grad-2: #1856bd;
+  --primary:      var(--brand);
+  --primary-press: var(--brand-ink);
+  --primary-soft:  var(--brand-bg);
+
+  /* status accents */
+  --amber:       #b06a00;  --amber-bg:  #fdf3e2;  --amber-line: #f1d9ac;
+  --green:       #1d7a4d;  --green-bg:  #e6f4ec;
+  --violet:      #6b4bc4;  --violet-bg: #efeafb;
+  --danger:      #c0392b;  --danger-bg: #fdecec;
+
+  /* backward-compat aliases */
+  --warn:        var(--amber);    --warn-bg:    var(--amber-bg);
+  --synced:      var(--green);    --synced-bg:  var(--green-bg);
+  --printed:     var(--violet);   --printed-bg: var(--violet-bg);
+  --failed:      var(--danger);   --failed-bg:  var(--danger-bg);
+  --finished:    #1d6fd6;         --finished-bg: #e3eefb;
+  --draft:       #5b6b7c;         --draft-bg:   #eceff3;
+
+  /* special fills */
+  --card-header:    #141a22;
+  --placeholder-1:  #eef2f6;
+  --placeholder-2:  #e6ecf2;
+
+  /* radius */
+  --radius:    12px;
+  --radius-sm: 8px;
+  --r:         var(--radius);
+  --r-sm:      var(--radius-sm);
+  --r-pill:    999px;
+
+  /* shadows */
+  --shadow-sm: 0 1px 2px rgba(20,30,45,.06), 0 1px 1px rgba(20,30,45,.04);
+  --shadow-md: 0 6px 20px rgba(20,30,45,.10), 0 2px 6px rgba(20,30,45,.06);
+  --shadow-lg: 0 18px 50px rgba(20,30,45,.18);
+  --shadow-1:  var(--shadow-sm);
+  --shadow-2:  var(--shadow-md);
+  --shadow-3:  var(--shadow-lg);
+
   --tap: 52px;
 
   font-family: var(--font);
-  color: var(--text);
+  color: var(--ink);
 }
 
 .jc[data-theme='dark'] {
-  --bg: #0c1218;
-  --stage: #080d12;
-  --surface: #151f2a;
+  --bg:        #0c1218;
+  --stage:     #080d12;
+  --surface:   #151f2a;
   --surface-2: #1b2733;
   --surface-3: #20303d;
-  --text: #e9eef3;
-  --text-muted: #98a7b6;
-  --text-faint: #65788a;
-  --border: #25323f;
-  --border-strong: #36475634;
-
-  --primary: #3f86f7;
-  --primary-press: #2f6ad1;
-  --primary-soft: #16263c;
-  --on-primary: #ffffff;
-
-  --draft: #9fb0c0;        --draft-bg: #1f2c39;
-  --finished: #62a3f3;     --finished-bg: #16273d;
-  --synced: #3fcc81;       --synced-bg: #102e1f;
-  --failed: #ff6363;       --failed-bg: #3a1717;
-  --printed: #ac90fb;      --printed-bg: #241a3d;
-  --warn: #e0a23a;         --warn-bg: #3a2c10;
-
-  --shadow-1: 0 1px 2px rgba(0,0,0,.4);
-  --shadow-2: 0 6px 20px rgba(0,0,0,.5);
-  --shadow-3: 0 18px 50px rgba(0,0,0,.6);
+  --ink:       #e9eef3;
+  --ink-2:     #98a7b6;
+  --ink-3:     #65788a;
+  --line:      #25323f;
+  --line-strong: #364756;
+  --brand:     #3f86f7;
+  --brand-ink: #2f6ad1;
+  --brand-bg:  #16263c;
+  --amber:     #e0a23a;  --amber-bg:  #3a2c10;
+  --green:     #3fcc81;  --green-bg:  #102e1f;
+  --violet:    #ac90fb;  --violet-bg: #241a3d;
+  --danger:    #ff6363;  --danger-bg: #3a1717;
+  --finished:  #62a3f3;  --finished-bg: #16273d;
+  --draft:     #9fb0c0;  --draft-bg:  #1f2c39;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: 0 6px 20px rgba(0,0,0,.5);
+  --shadow-lg: 0 18px 50px rgba(0,0,0,.6);
 }
 
 .jc * { box-sizing: border-box; }
@@ -154,8 +192,7 @@
 /* ---------- stage / presenter chrome ---------- */
 .jc {
   min-height: 100vh;
-  background:
-    radial-gradient(120% 80% at 50% -10%, var(--bg), var(--stage));
+  background: var(--bg);
   display: flex;
   flex-direction: column;
 }
