@@ -58,6 +58,7 @@ function matchesSearch(job, query) {
 export default function HistoryPanel({ jobs, onRowSelect }) {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [jobDate, setJobDate] = useState('');
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
@@ -69,13 +70,14 @@ export default function HistoryPanel({ jobs, onRowSelect }) {
         const day = job.capturedAt.slice(0, 10);
         if (fromDate && day < fromDate) return false;
         if (toDate && day > toDate) return false;
+        if (jobDate && (job.date || '').slice(0, 10) !== jobDate) return false;
         if (!matchesSearch(job, search)) return false;
         return true;
       })
       .sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || ''));
-  }, [jobs, fromDate, toDate, search]);
+  }, [jobs, fromDate, toDate, jobDate, search]);
 
-  const hasFilters = fromDate || toDate || search;
+  const hasFilters = fromDate || toDate || jobDate || search;
   const hasAnyHistory = jobs.some((j) => j.capturedAt);
 
   function handleRowClick(job) {
@@ -119,12 +121,16 @@ export default function HistoryPanel({ jobs, onRowSelect }) {
       {/* toolbar */}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <div className="tw-field">
-          <label>From</label>
+          <label>Captured from</label>
           <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
         </div>
         <div className="tw-field">
-          <label>To</label>
+          <label>Captured to</label>
           <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+        </div>
+        <div className="tw-field">
+          <label>Job date</label>
+          <input type="date" value={jobDate} onChange={(e) => setJobDate(e.target.value)} />
         </div>
 
         <div className="tw-search" style={{ flex: '1 1 200px' }}>
@@ -141,7 +147,7 @@ export default function HistoryPanel({ jobs, onRowSelect }) {
           <button
             className="tw-btn"
             type="button"
-            onClick={() => { setFromDate(''); setToDate(''); setSearch(''); }}
+            onClick={() => { setFromDate(''); setToDate(''); setJobDate(''); setSearch(''); }}
           >
             <Icon name="x" size={14} /> Clear filters
           </button>

@@ -86,20 +86,78 @@ function isPdfMime(mime) {
   return String(mime || '').toLowerCase() === 'application/pdf';
 }
 
+/* Numeric cost fields where typing an expression like "443+399" should
+   evaluate to its result. Date/text fields are deliberately excluded so a
+   value like "2026-06-05" is never mistaken for subtraction. */
+const CALCULABLE_FIELDS = new Set(['callOutFee', 'labour', 'materialsOther']);
+
+/* Safely evaluate a simple arithmetic expression (digits, + - * / and
+   parentheses only). Returns the original string if it isn't a pure
+   expression or doesn't contain an operator. */
+function evalArithmetic(raw) {
+  const cleaned = String(raw ?? '').replace(/[,\s]/g, '');
+  if (!cleaned) return raw;
+  if (!/^[\d+\-*/().]+$/.test(cleaned)) return raw;     // contains letters/symbols → leave as typed
+  if (!/[+\-*/]/.test(cleaned.slice(1))) return raw;    // no real operator (ignore a leading sign)
+  try {
+    // Input is sanitised to numbers and operators only, so this is safe.
+    // eslint-disable-next-line no-new-func
+    const result = Function(`"use strict"; return (${cleaned});`)();
+    if (typeof result === 'number' && Number.isFinite(result)) {
+      return String(Math.round(result * 100) / 100);
+    }
+  } catch (_) { /* fall through */ }
+  return raw;
+}
+
+/* True only for a real calendar date in YYYY-MM-DD form (rejects e.g.
+   2026-13-45 or 2026-02-30, which pass a naive regex). */
+function isValidIsoDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  if (!m) return false;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  const dt = new Date(y, mo - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+}
+
 function isStorableScan(mime) {
   return String(mime || '').startsWith('image/') || isPdfMime(mime);
 }
 
-/* Renders a staged source file: images as <img>, PDFs in an inline viewer. */
+/* Renders a staged source file: images as <img>, PDFs in an inline viewer.
+   PDFs are shown via a Blob URL (more reliable than a data: URL in an iframe). */
 function StagedPreview({ doc }) {
+  const isPdf = isPdfMime(doc?.mimeType);
+  const [pdfUrl, setPdfUrl] = useState('');
+
+  useEffect(() => {
+    if (!isPdf || !doc?.dataUrl) {
+      setPdfUrl('');
+      return undefined;
+    }
+    let url = '';
+    try {
+      url = URL.createObjectURL(dataUrlToBlob(doc.dataUrl));
+      setPdfUrl(url);
+    } catch (_) {
+      setPdfUrl('');
+    }
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [isPdf, doc?.dataUrl]);
+
   if (!doc) return null;
-  if (isPdfMime(doc.mimeType)) {
-    return (
+  if (isPdf) {
+    return pdfUrl ? (
       <iframe
         className="ocr-preview-pdf"
-        src={doc.dataUrl}
+        src={pdfUrl}
         title={`Scan preview ${doc.fileName}`}
       />
+    ) : (
+      <div className="ocr-preview-fallback">
+        <Icon name="file" size={26} />
+        <p>Preparing PDF preview…</p>
+      </div>
     );
   }
   if (doc.mimeType.startsWith('image/')) {
@@ -358,6 +416,18 @@ export default function OcrExtractionPanel({ job, onCreated }) {
 
     const fields = resolvedFields;
     const parsedDate = normalizeDate(fields.date?.value);
+
+    // Block capture unless the job date reads as a real calendar date.
+    if (!isValidIsoDate(parsedDate)) {
+      const rawDate = String(fields.date?.value || '').trim();
+      setError(
+        rawDate
+          ? `The job date "${rawDate}" could not be read as a valid date. Please correct it (e.g. 08/06/2026) before creating the capture record.`
+          : 'A job date is required. Please enter a valid date before creating the capture record.'
+      );
+      return;
+    }
+
     const parsedStatus = normalizeStatus(fields.status?.value) || 'printed';
     const techId = 't1';
     const rawAssignedTo = String(fields.jobAssignedTo?.value || '').trim();
@@ -686,142 +756,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           </div>
         )}
 
-        {!isReviewFullscreen && selectedDoc && result && (
-          <>
-            <div className="ocr-alert ok">
-              <Icon name="checkCircle" size={16} />
-              <span>
-                Reviewing {selectedDoc.fileName}. Validate values, then create the job card record.
-              </span>
-            </div>
-
-            <div className="ocr-review-layout">
-              <div className="ocr-preview-panel">
-                <div className="ocr-preview-head">
-                  <h3>Scanned source</h3>
-                  <span className="ph-sub">Use this to validate date and customer fields</span>
-                </div>
-                <div className="ocr-preview-frame">
-                  <StagedPreview doc={selectedDoc} />
-                </div>
-              </div>
-
-              <div className="ocr-review-fields">
-                <div className="ocr-summary-row">
-                  <div className="ocr-chip">
-                    <span>Average word confidence</span>
-                    <b>{pct(result.averageWordConfidence)}</b>
-                  </div>
-                  <div className="ocr-chip">
-                    <span>Text lines</span>
-                    <b>{result.lines.length}</b>
-                  </div>
-                  <div className="ocr-chip">
-                    <span>Words</span>
-                    <b>{result.words.length}</b>
-                  </div>
-                  <div className="ocr-chip">
-                    <span>Linked printed card</span>
-                    <b>{job?.ref || 'n/a'}</b>
-                  </div>
-                </div>
-
-                <table className="map-table ocr-fields">
-                  <thead>
-                    <tr>
-                      <th>Field</th>
-                      <th>Extracted value</th>
-                      <th>Confidence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(resolvedFields).map(([key, field]) => (
-                      <tr key={key}>
-                        <td className="mf">{fieldConfig[key]?.label || key}</td>
-                        <td>
-                          {key === 'workDescription' || key === 'materialsUsed' ? (
-                            <textarea
-                              className="ocr-edit-input ocr-edit-area"
-                              value={field.value || ''}
-                              onChange={(e) => setFieldValue(key, e.target.value)}
-                              placeholder="Enter corrected value"
-                            />
-                          ) : (
-                            <input
-                              className="ocr-edit-input"
-                              value={field.value || ''}
-                              onChange={(e) => setFieldValue(key, e.target.value)}
-                              placeholder="Enter corrected value"
-                            />
-                          )}
-                        </td>
-                        <td>
-                          <span
-                            className={
-                              'ocr-confidence ' +
-                              (Number.isFinite(field.confidence) &&
-                              field.confidence < LOW_CONFIDENCE_THRESHOLD
-                                ? 'low'
-                                : 'ok')
-                            }
-                          >
-                            {pct(field.confidence)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <div className="ocr-raw-wrap">
-                  <h3>Raw OCR lines (with bounding boxes)</h3>
-                  <div className="ocr-upload-row" style={{ marginBottom: 8 }}>
-                    <button className="btn btn-primary" disabled={saving} onClick={createCaptureRecord}>
-                      {saving ? (
-                        <>
-                          <Icon name="sync" size={16} className="spin" />
-                          <span>Saving...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="plus" size={16} />
-                          <span>Create capture record from OCR</span>
-                        </>
-                      )}
-                    </button>
-                    <button className="btn btn-ghost" disabled={saving} onClick={applyToCurrentJob}>
-                      <Icon name="checkCircle" size={16} />
-                      <span>Apply to selected card</span>
-                    </button>
-                  </div>
-                  <div className="ocr-raw-table">
-                    <table className="map-table">
-                      <thead>
-                        <tr>
-                          <th>Page</th>
-                          <th>Text</th>
-                          <th>Confidence</th>
-                          <th>Bounding box</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.lines.map((line) => (
-                          <tr key={line.id}>
-                            <td>{line.pageNumber || 'n/a'}</td>
-                            <td>{line.content || 'n/a'}</td>
-                            <td>{pct(line.confidence)}</td>
-                            <td className="ocr-bbox">{bboxText(line.boundingPolygon)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
         {isReviewFullscreen && selectedDoc && result && (
           <div className="ocr-fullscreen-overlay" role="dialog" aria-modal="true" aria-label="Full-page OCR review">
             <div className="ocr-fullscreen-head">
@@ -896,6 +830,11 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                                 className="ocr-edit-input"
                                 value={field.value || ''}
                                 onChange={(e) => setFieldValue(key, e.target.value)}
+                                onBlur={(e) => {
+                                  if (!CALCULABLE_FIELDS.has(key)) return;
+                                  const calc = evalArithmetic(e.target.value);
+                                  if (calc !== e.target.value) setFieldValue(key, calc);
+                                }}
                                 placeholder="Enter corrected value"
                               />
                             )}
@@ -920,6 +859,12 @@ export default function OcrExtractionPanel({ job, onCreated }) {
 
                   <div className="ocr-raw-wrap">
                     <h3>Raw OCR lines (with bounding boxes)</h3>
+                    {error && (
+                      <div className="ocr-alert danger" style={{ marginBottom: 8 }}>
+                        <Icon name="alertCircle" size={16} />
+                        <span>{error}</span>
+                      </div>
+                    )}
                     <div className="ocr-upload-row" style={{ marginBottom: 8 }}>
                       <button className="btn btn-primary" disabled={saving} onClick={createCaptureRecord}>
                         {saving ? (

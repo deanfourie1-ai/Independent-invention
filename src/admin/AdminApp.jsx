@@ -380,7 +380,12 @@ export default function AdminApp() {
                     </button>
                   </div>
                 )}
-                {job && <DigitalJobCard job={job} />}
+                {job && (
+                  <DigitalJobCard
+                    job={job}
+                    onUpdate={(patch) => patchJob(job.id, patch).catch(() => {})}
+                  />
+                )}
               </div>
 
               {job && (

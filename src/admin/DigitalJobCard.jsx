@@ -1,9 +1,49 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '../components/Icon';
 
 function displayValue(value) {
   const text = String(value ?? '').trim();
   return text || null;
+}
+
+/* Inline-editable row — used for fields the admin may need to correct
+   (e.g. when OCR misread them) before finalising the capture. */
+function EditableRow({ label, value, onSave, type = 'text', placeholder, copyKey, copied, onCopy }) {
+  const [draft, setDraft] = useState(value ?? '');
+
+  // Re-sync when the underlying job value changes (e.g. switching jobs).
+  useEffect(() => { setDraft(value ?? ''); }, [value]);
+
+  function commit() {
+    const next = String(draft ?? '').trim();
+    if (next !== String(value ?? '').trim()) onSave?.(next);
+  }
+
+  return (
+    <div className="cap-row">
+      <div className="k">{label}</div>
+      <div className="v">
+        <input
+          className="cap-edit-input"
+          type={type}
+          value={draft}
+          placeholder={placeholder || '—'}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+        />
+      </div>
+      <button
+        type="button"
+        className={'cap-copy' + (copied === copyKey ? ' ok' : '')}
+        onClick={() => onCopy(copyKey, String(draft || ''))}
+        title="Copy field value"
+        aria-label="Copy field value"
+      >
+        <Icon name={copied === copyKey ? 'check' : 'copy'} size={13} />
+      </button>
+    </div>
+  );
 }
 
 function CopyRow({ label, value, copyKey, copied, onCopy, multiline = false }) {
@@ -36,7 +76,7 @@ function Sec({ title, children }) {
   );
 }
 
-export default function DigitalJobCard({ job }) {
+export default function DigitalJobCard({ job, onUpdate }) {
   const [copied, setCopied] = useState(null);
   const completed = ['finished', 'synced', 'printed'].includes(job.status);
   const jobId = job.ref || job.id;
@@ -70,9 +110,9 @@ export default function DigitalJobCard({ job }) {
         {/* two-column top section */}
         <div className="cap-2col">
           <Sec title="Job details">
-            <CopyRow label="Assigned to"  value={job.jobAssignedTo}  copyKey="jobAssignedTo"  copied={copied} onCopy={copyField} />
-            <CopyRow label="Date"         value={job.date}           copyKey="date"            copied={copied} onCopy={copyField} />
-            <CopyRow label="Duration"     value={job.duration}       copyKey="duration"        copied={copied} onCopy={copyField} />
+            <EditableRow label="Assigned to" value={job.jobAssignedTo} placeholder="Name(s), comma-separated" onSave={(v) => onUpdate?.({ jobAssignedTo: v })} copyKey="jobAssignedTo" copied={copied} onCopy={copyField} />
+            <EditableRow label="Date"        value={job.date}         type="date"                            onSave={(v) => onUpdate?.({ date: v })}          copyKey="date"          copied={copied} onCopy={copyField} />
+            <EditableRow label="Duration"    value={job.duration}     placeholder="e.g. 2 hours"             onSave={(v) => onUpdate?.({ duration: v })}      copyKey="duration"      copied={copied} onCopy={copyField} />
             <CopyRow label="Completed"    value={completed ? 'Yes' : 'No'} copyKey="completed" copied={copied} onCopy={copyField} />
             <CopyRow label="Casual labour no" value={job.casualLabourNo} copyKey="casualLabourNo" copied={copied} onCopy={copyField} />
           </Sec>
