@@ -64,11 +64,10 @@ function QueueItem({ job, rec, tasks, selected, onClick, onDelete }) {
   );
 }
 
-export default function Worklist({ outstanding, captured, tasks, progress, selectedId, onSelect, showCaptured, onToggleCaptured, onDeleteOutstanding }) {
+export default function Worklist({ queue, tasks, progress, selectedId, onSelect, onDelete }) {
   const [search, setSearch] = useState('');
 
-  const filteredOutstanding = outstanding.filter((j) => matchesSearch(j, search));
-  const filteredCaptured = captured.filter((j) => matchesSearch(j, search));
+  const filteredQueue = queue.filter((j) => matchesSearch(j, search));
 
   return (
     <div className="cap-q">
@@ -88,15 +87,15 @@ export default function Worklist({ outstanding, captured, tasks, progress, selec
       <div>
         <div className="cap-qsec-head">
           <span className="t">To capture</span>
-          <span className="n">{filteredOutstanding.length}</span>
+          <span className="n">{filteredQueue.length}</span>
         </div>
-        {filteredOutstanding.length === 0 ? (
+        {filteredQueue.length === 0 ? (
           <div style={{ padding: '12px 4px', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
             {search
               ? <><Icon name="search" size={16} /> No matches</>
               : <><Icon name="checkCircle" size={16} /> Nothing left to capture</>}
           </div>
-        ) : filteredOutstanding.map((j) => (
+        ) : filteredQueue.map((j) => (
           <QueueItem
             key={j.id}
             job={j}
@@ -104,36 +103,10 @@ export default function Worklist({ outstanding, captured, tasks, progress, selec
             tasks={tasks}
             selected={j.id === selectedId}
             onClick={() => onSelect(j.id)}
-            onDelete={onDeleteOutstanding}
+            onDelete={onDelete}
           />
         ))}
       </div>
-
-      {/* captured today section */}
-      {captured.length > 0 && (
-        <div>
-          <button className="cap-qtoday" onClick={onToggleCaptured}>
-            <Icon name="check" size={15} stroke={3} />
-            <span style={{ flex: 1, textAlign: 'left' }}>Captured today</span>
-            <span className="n">{filteredCaptured.length}</span>
-            <Icon
-              name="chevDown"
-              size={15}
-              style={{ transform: showCaptured ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
-            />
-          </button>
-          {showCaptured && filteredCaptured.map((j) => (
-            <QueueItem
-              key={j.id}
-              job={j}
-              rec={progress[j.id]}
-              tasks={tasks}
-              selected={j.id === selectedId}
-              onClick={() => onSelect(j.id, true)}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

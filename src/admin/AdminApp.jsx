@@ -38,17 +38,17 @@ function loadProgress() {
   try { return JSON.parse(localStorage.getItem(PROGRESS_KEY)) || {}; } catch (_) { return {}; }
 }
 
-const activeOf = (tasks) => tasks.filter((t) => t.text.trim());
-const countDone = (rec, tasks) => activeOf(tasks).reduce((n, t) => n + (rec?.[t.id] ? 1 : 0), 0);
-const isComplete = (rec, tasks) => {
-  const a = activeOf(tasks);
-  return a.length > 0 && a.every((t) => rec?.[t.id]);
-};
+/* A card is "finished" once it carries a capturedAt timestamp. That is the
+   single source of truth — independent of the current checklist — so editing
+   the checklist can never pull a finished card back into the capture queue. */
+const isFinished = (job) => Boolean(job.capturedAt);
+const isInQueue = (job) => job.status === 'printed' && !isFinished(job);
 
 const DELETE_REASON_CODES = [
   { code: 'duplicate', label: 'Duplicate card' },
   { code: 'illegible', label: 'Illegible / unusable print' },
   { code: 'cancelled', label: 'Job cancelled' },
+  { code: 'captured_in_error', label: 'Captured / finished in error' },
   { code: 'test_entry', label: 'Test / training entry' },
   { code: 'wrong_queue', label: 'Wrongly added to capture queue' },
 ];
@@ -119,21 +119,28 @@ function SettingsMenu({ onEditChecklist, onExport, onOpenSettings, exporting, ca
 
 export default function AdminApp() {
   const { ready, jobs } = useAdminJobs();
-  const printed = jobs.filter((j) => j.status === 'printed');
+
+  /* Cards still waiting to be captured (drives the capture screen). */
+  const queue = jobs.filter(isInQueue);
+  /* Finished cards (live in History). */
+  const finished = jobs.filter(isFinished);
+  const hasPrintedCards = jobs.some((j) => j.status === 'printed');
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const capturedToday = finished.filter((j) => (j.capturedAt || '').slice(0, 10) === todayStr).length;
 
   const [tasks, setTasks] = useState(loadTasks);
   const [progress, setProgress] = useState(loadProgress);
   const [view, setView] = useState('work');
   const [tab, setTab] = useState('capture');
   const [selId, setSelId] = useState(null);
-  const [reviewing, setReviewing] = useState(false);
-  const [showCaptured, setShowCaptured] = useState(false);
   const [historyRow, setHistoryRow] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteReason, setDeleteReason] = useState(DELETE_REASON_CODES[0].code);
   const [deleteNotes, setDeleteNotes] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [reopenTarget, setReopenTarget] = useState(null);
+  const [reopening, setReopening] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -144,15 +151,8 @@ export default function AdminApp() {
     try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); } catch (_) {}
   }, [progress]);
 
-  const outstanding = printed.filter((j) => !isComplete(progress[j.id], tasks));
-  const captured = printed.filter((j) => isComplete(progress[j.id], tasks));
-
-  const selValid = selId && printed.some((j) => j.id === selId);
-  const job = printed.length === 0
-    ? null
-    : selValid
-    ? printed.find((j) => j.id === selId)
-    : (outstanding[0] ?? printed[0]);
+  const selValid = selId && queue.some((j) => j.id === selId);
+  const job = queue.length === 0 ? null : selValid ? queue.find((j) => j.id === selId) : queue[0];
 
   if (view === 'config') {
     return (
@@ -181,35 +181,20 @@ export default function AdminApp() {
   }
 
   const jobRec = progress[job?.id] || {};
-  const jobComplete = job ? isComplete(progress[job.id], tasks) : false;
 
   function toggleTask(taskId) {
     if (!job) return;
     const current = progress[job.id] || {};
-    const newRec = { ...current, [taskId]: !current[taskId] };
-    setProgress((p) => ({ ...p, [job.id]: newRec }));
-    if (isComplete(newRec, tasks) && !job.capturedAt) {
-      patchJob(job.id, { capturedAt: new Date().toISOString() });
-    }
+    setProgress((p) => ({ ...p, [job.id]: { ...current, [taskId]: !current[taskId] } }));
   }
 
-  function goNext() {
-    if (!job) return;
-    const next = outstanding.find((j) => j.id !== job?.id);
-    if (next) { setSelId(next.id); setReviewing(false); }
-    else { setReviewing(false); setSelId(null); }
-  }
-
-  function selectJob(id, isReview = false) {
+  function selectJob(id) {
     setSelId(id);
-    if (isReview) setReviewing(true);
   }
 
   function handleOcrCreated(createdJob) {
     if (!createdJob?.id) return;
     setSelId(createdJob.id);
-    setReviewing(false);
-    setShowCaptured(false);
   }
 
   async function saveInvoiceNumber(jobId, invoiceNumber, invoiceCustomer) {
@@ -223,12 +208,19 @@ export default function AdminApp() {
     );
   }
 
+  /* Explicit finish: marks the card captured (permanent) and advances. The
+     checklist component validates the invoice number before calling this. */
+  async function finishJob(jobId) {
+    await patchJob(jobId, { capturedAt: new Date().toISOString() });
+    setSelId(null);
+  }
+
   async function exportCompletedJobs() {
-    if (!captured.length || exporting) return;
+    if (!finished.length || exporting) return;
     setExporting(true);
     try {
       const xlsx = await import('xlsx');
-      const rows = captured.map((item) => ({
+      const rows = finished.map((item) => ({
         ID: item.ref || item.id,
         Date: item.date || '',
         Name: item.customer?.name || '',
@@ -283,11 +275,28 @@ export default function AdminApp() {
         return next;
       });
       if (selId === deleteTarget.id) setSelId(null);
+      if (historyRow?.id === deleteTarget.id) setHistoryRow(null);
       closeDeleteDialog();
     } catch (err) {
       setDeleteError(err?.message || 'Could not delete this job card.');
     } finally {
       setDeleting(false);
+    }
+  }
+
+  /* Reopen a finished card — clears capturedAt so it returns to the capture
+     queue (with its checklist ticks intact) for correction. */
+  async function confirmReopen() {
+    if (!reopenTarget) return;
+    setReopening(true);
+    try {
+      await patchJob(reopenTarget.id, { capturedAt: null });
+      if (historyRow?.id === reopenTarget.id) setHistoryRow(null);
+      setSelId(reopenTarget.id);
+      setReopenTarget(null);
+      setTab('capture');
+    } finally {
+      setReopening(false);
     }
   }
 
@@ -301,7 +310,7 @@ export default function AdminApp() {
           onExport={exportCompletedJobs}
           onOpenSettings={() => setView('settings')}
           exporting={exporting}
-          canExport={captured.length > 0}
+          canExport={finished.length > 0}
         />
       </div>
 
@@ -319,8 +328,8 @@ export default function AdminApp() {
             >
               <Icon name={t.icon} size={16} />
               {t.label}
-              {t.id === 'capture' && outstanding.length > 0 && (
-                <span className="tw-count tw-count--alert">{outstanding.length}</span>
+              {t.id === 'capture' && queue.length > 0 && (
+                <span className="tw-count tw-count--alert">{queue.length}</span>
               )}
             </button>
           ))}
@@ -334,52 +343,30 @@ export default function AdminApp() {
         )}
 
         {tab === 'capture' && (
-          printed.length === 0 ? (
-            <div className="tw-empty">
-              <Icon name="inbox" size={40} />
-              <p style={{ margin:'12px 0 16px', fontWeight:600 }}>No printed cards waiting for capture.</p>
-              <button className="tw-btn tw-btn--primary" onClick={() => setTab('ocr')}>
-                <Icon name="file" size={16} /> Open OCR tab
-              </button>
-            </div>
-          ) : outstanding.length === 0 && !reviewing ? (
-            <CheerScreen
-              captured={captured.length}
-              onReview={() => {
-                setReviewing(true);
-                setShowCaptured(true);
-                setSelId(captured[0]?.id ?? null);
-              }}
-            />
+          queue.length === 0 ? (
+            hasPrintedCards ? (
+              <CheerScreen captured={capturedToday} onReview={() => setTab('history')} />
+            ) : (
+              <div className="tw-empty">
+                <Icon name="inbox" size={40} />
+                <p style={{ margin:'12px 0 16px', fontWeight:600 }}>No printed cards waiting for capture.</p>
+                <button className="tw-btn tw-btn--primary" onClick={() => setTab('ocr')}>
+                  <Icon name="file" size={16} /> Open OCR tab
+                </button>
+              </div>
+            )
           ) : (
             <div className="cap-wrap">
               <Worklist
-                outstanding={outstanding}
-                captured={captured}
+                queue={queue}
                 tasks={tasks}
                 progress={progress}
                 selectedId={job?.id}
                 onSelect={selectJob}
-                showCaptured={showCaptured}
-                onToggleCaptured={() => setShowCaptured((s) => !s)}
-                onDeleteOutstanding={openDeleteDialog}
+                onDelete={openDeleteDialog}
               />
 
               <div>
-                {jobComplete && (
-                  <div className="cap-success">
-                    <div className="sr-ic"><Icon name="checkCircle" size={20} /></div>
-                    <div style={{ flex:1 }}>
-                      <div className="sr-title">Captured into Sage Online</div>
-                      <div className="sr-sub">{job.customer.name} · {job.ref} is fully entered.</div>
-                    </div>
-                    <button className="tw-btn tw-btn--primary" onClick={goNext}>
-                      {outstanding.length > 1
-                        ? <><span>Next order</span><Icon name="arrowRight" size={17} /></>
-                        : <><Icon name="check" size={17} stroke={3} /><span>Finish up</span></>}
-                    </button>
-                  </div>
-                )}
                 {job && (
                   <DigitalJobCard
                     job={job}
@@ -395,8 +382,7 @@ export default function AdminApp() {
                   progress={jobRec}
                   onToggle={toggleTask}
                   onSaveInvoice={saveInvoiceNumber}
-                  onNext={goNext}
-                  hasNext={outstanding.length > 1}
+                  onFinish={finishJob}
                 />
               )}
             </div>
@@ -404,7 +390,12 @@ export default function AdminApp() {
         )}
 
         {tab === 'history' && (
-          <HistoryPanel jobs={jobs} onRowSelect={setHistoryRow} />
+          <HistoryPanel
+            jobs={jobs}
+            onRowSelect={setHistoryRow}
+            onReopen={setReopenTarget}
+            onDelete={openDeleteDialog}
+          />
         )}
       </div>
 
@@ -416,13 +407,13 @@ export default function AdminApp() {
         <div className="admin-modal-scrim" role="presentation" onClick={closeDeleteDialog}>
           <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="admin-modal-head">
-              <h3>Delete from capture queue</h3>
+              <h3>Delete job card</h3>
               <button className="ghost-icon" type="button" onClick={closeDeleteDialog} aria-label="Close delete dialog">
                 <Icon name="x" size={16} />
               </button>
             </div>
             <p className="admin-modal-sub">
-              This removes <span className="mono">{deleteTarget.ref}</span> from admin recapture. Choose a reason code.
+              This permanently removes <span className="mono">{deleteTarget.ref}</span>. Choose a reason code.
             </p>
             <label className="field-group" style={{ marginBottom: 12 }}>
               <span className="field-lbl">Reason code</span>
@@ -454,6 +445,33 @@ export default function AdminApp() {
               <button className="btn btn-danger" type="button" onClick={confirmDeleteJob} disabled={deleting}>
                 <Icon name="trash" size={16} />
                 <span>{deleting ? 'Deleting...' : 'Delete card'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* reopen modal */}
+      {reopenTarget && (
+        <div className="admin-modal-scrim" role="presentation" onClick={() => !reopening && setReopenTarget(null)}>
+          <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-head">
+              <h3>Reopen for capture</h3>
+              <button className="ghost-icon" type="button" onClick={() => !reopening && setReopenTarget(null)} aria-label="Close reopen dialog">
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+            <p className="admin-modal-sub">
+              This moves <span className="mono">{reopenTarget.ref}</span> out of History and back into the
+              capture queue so you can correct it. Its checklist ticks are kept.
+            </p>
+            <div className="admin-modal-actions">
+              <button className="btn btn-ghost" type="button" onClick={() => setReopenTarget(null)} disabled={reopening}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" type="button" onClick={confirmReopen} disabled={reopening}>
+                <Icon name="sync" size={16} />
+                <span>{reopening ? 'Reopening...' : 'Reopen card'}</span>
               </button>
             </div>
           </div>

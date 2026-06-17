@@ -55,7 +55,7 @@ function matchesSearch(job, query) {
   );
 }
 
-export default function HistoryPanel({ jobs, onRowSelect }) {
+export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [jobDate, setJobDate] = useState('');
@@ -191,6 +191,7 @@ export default function HistoryPanel({ jobs, onRowSelect }) {
                   <th>Total</th>
                   <th>Status</th>
                   <th>Scan</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -238,6 +239,28 @@ export default function HistoryPanel({ jobs, onRowSelect }) {
                             View
                           </a>
                         ) : <span className="tw-muted">—</span>}
+                      </td>
+                      <td>
+                        <div className="hist-actions">
+                          <button
+                            type="button"
+                            className="hist-act"
+                            title="Reopen for capture"
+                            onClick={(e) => { e.stopPropagation(); onReopen?.(job); }}
+                          >
+                            <Icon name="sync" size={13} />
+                            Reopen
+                          </button>
+                          <button
+                            type="button"
+                            className="hist-act danger"
+                            title="Delete record"
+                            aria-label={`Delete ${job.ref}`}
+                            onClick={(e) => { e.stopPropagation(); onDelete?.(job); }}
+                          >
+                            <Icon name="trash" size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

@@ -1,14 +1,34 @@
 import { useState, useEffect } from 'react';
 import Icon from '../components/Icon';
 
-function displayValue(value) {
-  const text = String(value ?? '').trim();
-  return text || null;
+/* Downstream views (history list, detail drawer, OCR matcher) only ever
+   render the first 3 assignees, so warn the admin once they exceed that. */
+const MAX_ASSIGNEES = 3;
+
+function parseAssignees(value) {
+  return String(value ?? '')
+    .split(/\s*,\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function CopyButton({ copyKey, copied, onCopy, value }) {
+  return (
+    <button
+      type="button"
+      className={'cap-copy' + (copied === copyKey ? ' ok' : '')}
+      onClick={() => onCopy(copyKey, String(value || ''))}
+      title="Copy field value"
+      aria-label="Copy field value"
+    >
+      <Icon name={copied === copyKey ? 'check' : 'copy'} size={13} />
+    </button>
+  );
 }
 
 /* Inline-editable row — used for fields the admin may need to correct
    (e.g. when OCR misread them) before finalising the capture. */
-function EditableRow({ label, value, onSave, type = 'text', placeholder, copyKey, copied, onCopy }) {
+function EditableRow({ label, value, onSave, type = 'text', placeholder, multiline = false, copyKey, copied, onCopy }) {
   const [draft, setDraft] = useState(value ?? '');
 
   // Re-sync when the underlying job value changes (e.g. switching jobs).
@@ -20,49 +40,93 @@ function EditableRow({ label, value, onSave, type = 'text', placeholder, copyKey
   }
 
   return (
-    <div className="cap-row">
+    <div className={'cap-row' + (multiline ? ' cap-row--wide' : '')}>
       <div className="k">{label}</div>
+      <div className="v">
+        {multiline ? (
+          <textarea
+            className="cap-edit-input cap-edit-area"
+            value={draft}
+            placeholder={placeholder || '—'}
+            rows={3}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+          />
+        ) : (
+          <input
+            className="cap-edit-input"
+            type={type}
+            value={draft}
+            placeholder={placeholder || '—'}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+          />
+        )}
+      </div>
+      <CopyButton copyKey={copyKey} copied={copied} onCopy={onCopy} value={draft} />
+    </div>
+  );
+}
+
+/* Editable assignee row: stores a comma-separated list of names and shows
+   the parsed people as chips, warning when more than MAX_ASSIGNEES are added. */
+function AssigneeRow({ value, onSave, copyKey, copied, onCopy }) {
+  const [draft, setDraft] = useState(value ?? '');
+  useEffect(() => { setDraft(value ?? ''); }, [value]);
+
+  function commit() {
+    const next = String(draft ?? '').trim();
+    if (next !== String(value ?? '').trim()) onSave?.(next);
+  }
+
+  const names = parseAssignees(draft);
+  const tooMany = names.length > MAX_ASSIGNEES;
+
+  return (
+    <div className="cap-row cap-row--wide">
+      <div className="k">Assigned to</div>
       <div className="v">
         <input
           className="cap-edit-input"
-          type={type}
+          type="text"
           value={draft}
-          placeholder={placeholder || '—'}
+          placeholder="Name(s), comma-separated"
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
         />
+        {names.length > 0 && (
+          <div className="cap-assignees">
+            {names.map((name, i) => (
+              <span key={i} className={'cap-chip' + (i >= MAX_ASSIGNEES ? ' over' : '')}>
+                <Icon name="user" size={11} />
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+        {tooMany && (
+          <div className="cap-assignee-warn">
+            <Icon name="alertCircle" size={13} />
+            <span>Only the first {MAX_ASSIGNEES} names appear in history, exports and avatars.</span>
+          </div>
+        )}
       </div>
-      <button
-        type="button"
-        className={'cap-copy' + (copied === copyKey ? ' ok' : '')}
-        onClick={() => onCopy(copyKey, String(draft || ''))}
-        title="Copy field value"
-        aria-label="Copy field value"
-      >
-        <Icon name={copied === copyKey ? 'check' : 'copy'} size={13} />
-      </button>
+      <CopyButton copyKey={copyKey} copied={copied} onCopy={onCopy} value={draft} />
     </div>
   );
 }
 
 function CopyRow({ label, value, copyKey, copied, onCopy, multiline = false }) {
-  const shown = displayValue(value);
+  const shown = String(value ?? '').trim() || null;
   return (
     <div className={'cap-row' + (multiline ? ' cap-row--wide' : '')}>
       <div className="k">{label}</div>
       <div className={'v' + (shown ? '' : ' empty') + (multiline ? ' multi' : '')}>
         {shown || '—'}
       </div>
-      <button
-        type="button"
-        className={'cap-copy' + (copied === copyKey ? ' ok' : '')}
-        onClick={() => onCopy(copyKey, shown || '')}
-        title="Copy field value"
-        aria-label="Copy field value"
-      >
-        <Icon name={copied === copyKey ? 'check' : 'copy'} size={13} />
-      </button>
+      <CopyButton copyKey={copyKey} copied={copied} onCopy={onCopy} value={shown || ''} />
     </div>
   );
 }
@@ -81,11 +145,19 @@ export default function DigitalJobCard({ job, onUpdate }) {
   const completed = ['finished', 'synced', 'printed'].includes(job.status);
   const jobId = job.ref || job.id;
 
-  const callOutFee = job.charges?.callOutFee;
-  const labour = job.charges?.labour;
-  const otherCosts = job.charges?.materials;
-  const additionalNotes = job.charges?.notes;
-  const total = job.charges?.total;
+  /* The scanned source file the OCR was run against — OneDrive item or local upload. */
+  const scanSrc = job.oneDriveItemId
+    ? `/api/image/${job.oneDriveItemId}`
+    : job.imagePath ? `/${job.imagePath}` : null;
+  const isPdfScan =
+    job.scanMimeType === 'application/pdf' ||
+    /\.pdf$/i.test(job.imagePath || '') ||
+    /\.pdf$/i.test(job.ocrImport?.sourceFileName || '');
+
+  /* Nested-object patch helpers — the server PATCH does a shallow merge, so
+     edits to customer.* / charges.* must carry the whole sub-object. */
+  const patchCustomer = (key, v) => onUpdate?.({ customer: { ...(job.customer || {}), [key]: v } });
+  const patchCharges  = (key, v) => onUpdate?.({ charges: { ...(job.charges || {}), [key]: v } });
 
   function copyField(key, text) {
     try { navigator.clipboard?.writeText(String(text || '')); } catch (_) {}
@@ -97,8 +169,20 @@ export default function DigitalJobCard({ job, onUpdate }) {
     <div className="cap-card">
       <div className="cap-card-head">
         <span className="ttl">Digital job card</span>
-        <span className="hint">Copy directly from each field</span>
+        <span className="hint">Edit any field, then copy into Sage</span>
         <div style={{ flex: 1 }} />
+        {scanSrc && (
+          <a
+            className="cap-scan-link"
+            href={scanSrc}
+            target="_blank"
+            rel="noreferrer"
+            title={`Open the scanned ${isPdfScan ? 'PDF' : 'image'} used for OCR`}
+          >
+            <Icon name="eye" size={13} />
+            {isPdfScan ? 'Open scanned PDF' : 'Open scanned file'}
+          </a>
+        )}
         <span className="cap-jobid">Job ID: {jobId}</span>
         <span className="cap-lock">
           <Icon name="lock" size={11} />
@@ -110,48 +194,36 @@ export default function DigitalJobCard({ job, onUpdate }) {
         {/* two-column top section */}
         <div className="cap-2col">
           <Sec title="Job details">
-            <EditableRow label="Assigned to" value={job.jobAssignedTo} placeholder="Name(s), comma-separated" onSave={(v) => onUpdate?.({ jobAssignedTo: v })} copyKey="jobAssignedTo" copied={copied} onCopy={copyField} />
-            <EditableRow label="Date"        value={job.date}         type="date"                            onSave={(v) => onUpdate?.({ date: v })}          copyKey="date"          copied={copied} onCopy={copyField} />
-            <EditableRow label="Duration"    value={job.duration}     placeholder="e.g. 2 hours"             onSave={(v) => onUpdate?.({ duration: v })}      copyKey="duration"      copied={copied} onCopy={copyField} />
-            <CopyRow label="Completed"    value={completed ? 'Yes' : 'No'} copyKey="completed" copied={copied} onCopy={copyField} />
-            <CopyRow label="Casual labour no" value={job.casualLabourNo} copyKey="casualLabourNo" copied={copied} onCopy={copyField} />
+            <AssigneeRow value={job.jobAssignedTo} onSave={(v) => onUpdate?.({ jobAssignedTo: v })} copyKey="jobAssignedTo" copied={copied} onCopy={copyField} />
+            <EditableRow label="Date"            value={job.date}           type="date"                onSave={(v) => onUpdate?.({ date: v })}           copyKey="date"           copied={copied} onCopy={copyField} />
+            <EditableRow label="Duration"        value={job.duration}       placeholder="e.g. 2 hours" onSave={(v) => onUpdate?.({ duration: v })}       copyKey="duration"       copied={copied} onCopy={copyField} />
+            <CopyRow     label="Completed"       value={completed ? 'Yes' : 'No'} copyKey="completed" copied={copied} onCopy={copyField} />
+            <EditableRow label="Casual labour no" value={job.casualLabourNo} placeholder="—"           onSave={(v) => onUpdate?.({ casualLabourNo: v })} copyKey="casualLabourNo" copied={copied} onCopy={copyField} />
           </Sec>
 
           <Sec title="Client details">
-            <CopyRow label="Name"           value={job.customer?.name}          copyKey="customerName"    copied={copied} onCopy={copyField} />
-            <CopyRow label="Address"        value={job.customer?.address}       copyKey="customerAddress" copied={copied} onCopy={copyField} multiline />
-            <CopyRow label="Contact"        value={job.customer?.contactPerson} copyKey="contactPerson"   copied={copied} onCopy={copyField} />
-            <CopyRow label="Tel"            value={job.customer?.phone}         copyKey="phone"           copied={copied} onCopy={copyField} />
-            <CopyRow label="Email"          value={job.customer?.email}         copyKey="email"           copied={copied} onCopy={copyField} />
+            <EditableRow label="Name"    value={job.customer?.name}          onSave={(v) => patchCustomer('name', v)}          copyKey="customerName"    copied={copied} onCopy={copyField} />
+            <EditableRow label="Address" value={job.customer?.address}       multiline onSave={(v) => patchCustomer('address', v)}  copyKey="customerAddress" copied={copied} onCopy={copyField} />
+            <EditableRow label="Contact" value={job.customer?.contactPerson} onSave={(v) => patchCustomer('contactPerson', v)} copyKey="contactPerson"   copied={copied} onCopy={copyField} />
+            <EditableRow label="Tel"     value={job.customer?.phone}         type="tel"  onSave={(v) => patchCustomer('phone', v)}     copyKey="phone"           copied={copied} onCopy={copyField} />
+            <EditableRow label="Email"   value={job.customer?.email}         type="email" onSave={(v) => patchCustomer('email', v)}    copyKey="email"           copied={copied} onCopy={copyField} />
           </Sec>
         </div>
 
         <Sec title="Description of work done">
-          <CopyRow label="Job done" value={job.jobDone} copyKey="jobDone" copied={copied} onCopy={copyField} multiline />
+          <EditableRow label="Job done" value={job.jobDone} multiline onSave={(v) => onUpdate?.({ jobDone: v })} copyKey="jobDone" copied={copied} onCopy={copyField} />
         </Sec>
 
         <Sec title="Cost / breakdown">
-          <div className="cap-cost">
-            <span className="lab">Call-out fee</span>
-            <span className="amt">{callOutFee || '—'}</span>
-            <span className="lab">Labour</span>
-            <span className="amt">{labour || '—'}</span>
-            <span className="lab">Other costs</span>
-            <span className="amt">{otherCosts || '—'}</span>
-            {total && (
-              <>
-                <span className="lab tot">Total</span>
-                <span className="amt tot">{total}</span>
-              </>
-            )}
-          </div>
-          {additionalNotes && (
-            <CopyRow label="Notes" value={additionalNotes} copyKey="additionalNotes" copied={copied} onCopy={copyField} multiline />
-          )}
+          <EditableRow label="Call-out fee" value={job.charges?.callOutFee} onSave={(v) => patchCharges('callOutFee', v)} copyKey="callOutFee" copied={copied} onCopy={copyField} />
+          <EditableRow label="Labour"       value={job.charges?.labour}     onSave={(v) => patchCharges('labour', v)}     copyKey="labour"     copied={copied} onCopy={copyField} />
+          <EditableRow label="Other costs"  value={job.charges?.materials}  onSave={(v) => patchCharges('materials', v)}  copyKey="otherCosts" copied={copied} onCopy={copyField} />
+          <EditableRow label="Total"        value={job.charges?.total}      onSave={(v) => patchCharges('total', v)}      copyKey="total"      copied={copied} onCopy={copyField} />
+          <EditableRow label="Notes"        value={job.charges?.notes}      multiline onSave={(v) => patchCharges('notes', v)} copyKey="additionalNotes" copied={copied} onCopy={copyField} />
         </Sec>
 
         <Sec title="Materials used">
-          <CopyRow label="Materials" value={job.materials} copyKey="materials" copied={copied} onCopy={copyField} multiline />
+          <EditableRow label="Materials" value={job.materials} multiline onSave={(v) => onUpdate?.({ materials: v })} copyKey="materials" copied={copied} onCopy={copyField} />
         </Sec>
       </div>
     </div>

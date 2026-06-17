@@ -6,8 +6,7 @@ export default function CaptureChecklist({
   tasks,
   progress,
   onToggle,
-  onNext,
-  hasNext,
+  onFinish,
   onSaveInvoice,
 }) {
   const active = tasks.filter((t) => t.text.trim());
@@ -20,10 +19,13 @@ export default function CaptureChecklist({
     job?.invoiceCustomer || job?.customer?.name || ''
   );
   const [savingInvoice, setSavingInvoice] = useState(false);
+  const [finishError, setFinishError] = useState('');
+  const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
     setInvoiceDraft(job?.invoiceNumber || '');
     setInvoiceCustomerDraft(job?.invoiceCustomer || job?.customer?.name || '');
+    setFinishError('');
   }, [job?.id, job?.invoiceNumber, job?.invoiceCustomer, job?.customer?.name]);
 
   async function saveInvoiceRef() {
@@ -33,6 +35,25 @@ export default function CaptureChecklist({
       await onSaveInvoice(job.id, invoiceDraft, invoiceCustomerDraft);
     } finally {
       setSavingInvoice(false);
+    }
+  }
+
+  async function handleFinish() {
+    if (!job?.id || !complete) return;
+    if (!String(invoiceDraft).trim()) {
+      setFinishError('Enter the invoice number before finishing this card.');
+      return;
+    }
+    setFinishError('');
+    setFinishing(true);
+    try {
+      // Persist the invoice reference, then mark the card captured.
+      await onSaveInvoice?.(job.id, invoiceDraft, invoiceCustomerDraft);
+      await onFinish?.(job.id);
+    } catch (err) {
+      setFinishError(err?.message || 'Could not finish this card. Try again.');
+    } finally {
+      setFinishing(false);
     }
   }
 
@@ -114,16 +135,21 @@ export default function CaptureChecklist({
           </label>
         </div>
 
-        {/* finish button */}
+        {/* finish */}
+        {finishError && (
+          <div className="ocr-alert danger" style={{ marginBottom: 10 }}>
+            <Icon name="alertCircle" size={16} />
+            <span>{finishError}</span>
+          </div>
+        )}
         <button
           className="tw-btn tw-btn--primary cap-finish"
-          onClick={onNext}
-          disabled={!complete}
-          title={complete ? undefined : 'Tick all checklist items first'}
+          onClick={handleFinish}
+          disabled={!complete || finishing}
+          title={complete ? 'File this card to History' : 'Tick all checklist items first'}
         >
-          {hasNext
-            ? <><span>Next order</span><Icon name="arrowRight" size={17} /></>
-            : <><Icon name="check" size={17} stroke={3} /><span>Finish up</span></>}
+          <Icon name="check" size={17} stroke={3} />
+          <span>{finishing ? 'Filing...' : 'Finish — file to History'}</span>
         </button>
       </div>
     </div>

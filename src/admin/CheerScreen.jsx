@@ -49,7 +49,7 @@ export default function CheerScreen({ captured, onReview }) {
         </div>
         {captured > 0 && (
           <button className="btn btn-ghost" style={{ marginTop: 22 }} onClick={onReview}>
-            <Icon name="eye" size={18} /> Review captured orders
+            <Icon name="clock" size={18} /> View captured in History
           </button>
         )}
       </div>
