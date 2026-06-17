@@ -117,7 +117,7 @@ function SettingsMenu({ onEditChecklist, onExport, onOpenSettings, exporting, ca
   );
 }
 
-export default function AdminApp() {
+export default function AdminApp({ workspaceSwitch }) {
   const { ready, jobs } = useAdminJobs();
 
   /* Cards still waiting to be captured (drives the capture screen). */
@@ -303,8 +303,9 @@ export default function AdminApp() {
   return (
     <div className="tw">
       {/* brand topbar */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 22px', background:'var(--surface)', borderBottom:'1px solid var(--line)', flexShrink:0 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:16, padding:'12px 22px', background:'var(--surface)', borderBottom:'1px solid var(--line)', flexShrink:0 }}>
         <Brand />
+        {workspaceSwitch}
         <SettingsMenu
           onEditChecklist={() => setView('config')}
           onExport={exportCompletedJobs}

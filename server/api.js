@@ -20,6 +20,8 @@ const UPLOADS_DIR = isPkg
 const DATA_FILE   = path.join(DATA_DIR, 'jobs.json');
 const CONFIG_FILE = path.join(DATA_DIR, 'onedrive-config.json');
 const TECHS_FILE  = path.join(DATA_DIR, 'technicians.json');
+const CUSTOMERS_FILE    = path.join(DATA_DIR, 'customers.json');
+const INTERACTIONS_FILE = path.join(DATA_DIR, 'interactions.json');
 
 const DEFAULT_TECHNICIANS = [
   { id: 't1', name: 'Claas' },
@@ -62,6 +64,53 @@ function writeTechnicians(list) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(TECHS_FILE, JSON.stringify(list, null, 2), 'utf-8');
 }
+
+/* ── Customer follow-ups store (customers + interactions) ──
+   Seeded on first run so the screen isn't empty; once the file
+   exists (even as []), the seed is no longer applied.            */
+const DEFAULT_CUSTOMERS = [
+  { id: 'C-1042', name: 'Pretoria Glassworks', contact: 'Thabo Mokoena', phone: '012 804 9920', email: 'accounts@pretoriaglass.co.za',
+    invoices: [ { no: 'INV-0741', amount: 23800, days: 118 }, { no: 'INV-0802', amount: 4200, days: 22 } ] },
+  { id: 'C-1067', name: 'Harbour Holdings', contact: 'René Adams', phone: '021 419 6700', email: 'finance@harbourholdings.co.za',
+    invoices: [ { no: 'INV-0765', amount: 16700, days: 74 }, { no: 'INV-0788', amount: 5400, days: 40 } ] },
+  { id: 'C-1019', name: 'Coastal Rentals (Pty) Ltd', contact: 'M. Venter', phone: '021 788 2245', email: 'ar@coastalrentals.co.za',
+    invoices: [ { no: 'INV-0771', amount: 8600, days: 41 } ] },
+  { id: 'C-1088', name: 'R. Abrahams', contact: 'Riaan Abrahams', phone: '083 421 0098', email: 'rabrahams@gmail.com',
+    invoices: [ { no: 'INV-0754', amount: 5400, days: 96 } ] },
+  { id: 'C-1055', name: 'Greenfield Estate', contact: 'Body Corporate', phone: '021 905 7781', email: 'manager@greenfieldestate.co.za',
+    invoices: [ { no: 'INV-0758', amount: 6750, days: 38 } ] },
+  { id: 'C-1073', name: 'T. Naidoo', contact: 'Trevor Naidoo', phone: '072 660 1184', email: null,
+    invoices: [ { no: 'INV-0761', amount: 3100, days: 58 } ] },
+  { id: 'C-1061', name: 'Dlamini Residence', contact: 'N. Dlamini', phone: '078 220 3345', email: 'n.dlamini@outlook.com',
+    invoices: [ { no: 'INV-0768', amount: 920, days: 47 } ] },
+  { id: 'C-1003', name: 'François Balbi', contact: 'François Balbi', phone: '082 555 1102', email: 'francois@balbi.co.za',
+    invoices: [ { no: 'INV-0789', amount: 1240, days: 33 } ] },
+];
+
+const DEFAULT_INTERACTIONS = [
+  { id: 'L-3007', customerId: 'C-1067', date: '5 Jun 2026', time: '15:40', by: 'Sam Whitfield', did: 'visit', invoice: 'INV-0765',
+    said: "Dropped invoice copies at Dock House reception. René to confirm what's already been paid.", followUpIso: '2026-06-11', followUpTime: '11:30' },
+  { id: 'L-3006', customerId: 'C-1019', date: '5 Jun 2026', time: '14:02', by: 'Naledi Khoza', did: 'email', invoice: 'INV-0771',
+    said: 'Emailed statement + 30-day reminder to ar@coastalrentals.co.za. No reply yet.', followUpIso: '2026-06-13', followUpTime: '09:00' },
+  { id: 'L-3005', customerId: 'C-1042', date: '2 Jun 2026', time: '10:24', by: 'Sam Whitfield', did: 'call', invoice: 'INV-0741',
+    said: 'Spoke to Thabo — promised EFT for the full R 23 800 on INV-0741 by 15 Jun. Re-check after the 15th.', followUpIso: '2026-06-16', followUpTime: '10:00' },
+  { id: 'L-3004', customerId: 'C-1067', date: '26 May 2026', time: '09:10', by: 'Sam Whitfield', did: 'call', invoice: 'INV-0788',
+    said: 'Called René about the newer INV-0788 too — will bundle both onto the next payment run.', followUpIso: null, followUpTime: null },
+  { id: 'L-3003', customerId: 'C-1042', date: '20 May 2026', time: '11:48', by: 'Naledi Khoza', did: 'email', invoice: null,
+    said: 'Emailed a combined statement covering both INV-0741 and the new INV-0802.', followUpIso: null, followUpTime: null },
+  { id: 'L-3002', customerId: 'C-1042', date: '8 May 2026', time: '16:05', by: 'Naledi Khoza', did: 'note', invoice: 'INV-0802',
+    said: 'INV-0802 raised and added to the account — flagged to chase with the older balance.', followUpIso: null, followUpTime: null },
+];
+
+function readJsonFile(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return fallback; }
+}
+function writeJsonFile(file, data) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
+}
+const readCustomers    = () => readJsonFile(CUSTOMERS_FILE, DEFAULT_CUSTOMERS);
+const readInteractions = () => readJsonFile(INTERACTIONS_FILE, DEFAULT_INTERACTIONS);
 
 /* ── Graph API token cache ──────────────────────────────── */
 let _tok = { token: null, expiresAt: 0 };
@@ -301,6 +350,58 @@ export async function handleRequest(req, res, next) {
         if (!Array.isArray(list)) return send(res, 400, { error: 'Expected array' });
         writeTechnicians(list);
         return send(res, 200, list);
+      }
+    }
+
+    /* ── customers (follow-ups) ───────────────────────── */
+    if (resource === 'customers') {
+      if (method === 'GET' && !id) return send(res, 200, readCustomers());
+
+      if (method === 'PUT' && !id) {
+        const list = await collectBody(req);
+        if (!Array.isArray(list)) return send(res, 400, { error: 'Expected array' });
+        writeJsonFile(CUSTOMERS_FILE, list);
+        return send(res, 200, list);
+      }
+
+      if (method === 'POST' && !id) {
+        const body = await collectBody(req);
+        const list = readCustomers();
+        list.push(body);
+        writeJsonFile(CUSTOMERS_FILE, list);
+        return send(res, 201, body);
+      }
+
+      if (method === 'PATCH' && id) {
+        const body = await collectBody(req);
+        const list = readCustomers();
+        const idx  = list.findIndex((c) => c.id === id);
+        if (idx === -1) return send(res, 404, { error: 'Not found' });
+        list[idx] = { ...list[idx], ...body };
+        writeJsonFile(CUSTOMERS_FILE, list);
+        return send(res, 200, list[idx]);
+      }
+
+      if (method === 'DELETE' && id) {
+        const list = readCustomers();
+        const idx  = list.findIndex((c) => c.id === id);
+        if (idx === -1) return send(res, 404, { error: 'Not found' });
+        const [removed] = list.splice(idx, 1);
+        writeJsonFile(CUSTOMERS_FILE, list);
+        return send(res, 200, removed);
+      }
+    }
+
+    /* ── interactions (follow-ups log) ────────────────── */
+    if (resource === 'interactions') {
+      if (method === 'GET' && !id) return send(res, 200, readInteractions());
+
+      if (method === 'POST' && !id) {
+        const body = await collectBody(req);
+        const list = readInteractions();
+        list.unshift(body); // newest first
+        writeJsonFile(INTERACTIONS_FILE, list);
+        return send(res, 201, body);
       }
     }
 
