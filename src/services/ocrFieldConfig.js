@@ -1,18 +1,6 @@
 const OCR_FIELD_CONFIG_KEY = 'tidewell.ocr.fieldConfig';
 
 export const DEFAULT_OCR_FIELD_CONFIG = {
-  jobId: {
-    label: 'Quote No',
-    keyMatchers: [
-      'job\\s*(id|ref|reference|number|no\\.?)',
-      'quote\\s*(id|ref|reference|number|no\.?)',
-      '^quote$',
-      '^ref$',
-      '^reference$',
-      '^job\\s*card\\s*no$',
-    ],
-    minConfidence: 0.5,
-  },
   date: {
     label: 'Date',
     keyMatchers: [
@@ -100,11 +88,13 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
     ],
     minConfidence: 0.5,
   },
-  additionalNotes: {
-    label: 'Additional Notes',
+  total: {
+    label: 'Total',
     keyMatchers: [
-      'additional\\s*notes?',
-      '^notes?$',
+      '^total$',
+      'total\\s*(amount|due|cost)?',
+      'grand\\s*total',
+      'amount\\s*due',
     ],
     minConfidence: 0.5,
   },

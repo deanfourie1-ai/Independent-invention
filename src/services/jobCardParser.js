@@ -178,7 +178,6 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
   const assignedIndex = lines.findIndex((line) => /\bassigned\s*to\b\s*:/i.test(line));
   const assignedNext = assignedIndex >= 0 ? lines[assignedIndex + 1] || '' : '';
 
-  const kvJobId = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.jobId?.keyMatchers);
   const kvDate = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.date?.keyMatchers);
   const kvAssigned = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.jobAssignedTo?.keyMatchers);
   const kvCustomerName = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.customerName?.keyMatchers);
@@ -189,12 +188,7 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
   const kvCallOutFee = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.callOutFee?.keyMatchers);
   const kvLabour = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.labour?.keyMatchers);
   const kvMaterialsOther = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.materialsOther?.keyMatchers);
-  const kvAdditionalNotes = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.additionalNotes?.keyMatchers);
-
-  const jobId =
-    kvJobId.value ||
-    extractLabeledValue(content, ['job\\s*(id|ref|reference|number|no\.?)', 'quote\\s*(id|ref|reference|number|no\.?)']) ||
-    extractByPattern(content, [/\b(JC-[A-Z0-9-]{4,})\b/i, /\b([A-Z0-9]{6,}-[A-Z0-9-]{4,})\b/i]);
+  const kvTotal = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.total?.keyMatchers);
 
   const date =
     kvDate.value ||
@@ -255,9 +249,12 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
       /\bdrain\s*m\s*[-:]?\s*([0-9][0-9.,]*)\b/i,
     ]);
 
-  const additionalNotes =
-    kvAdditionalNotes.value ||
-    extractLabeledValue(content, ['additional\\s*notes?', 'notes?']);
+  const total =
+    kvTotal.value ||
+    extractChargeValue(content, [
+      /\btotal\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
+      /\bamount\s*due\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
+    ]);
 
   const completedMarker = `${completedLine} ${completedNext}`.toUpperCase();
   const completedNo = /\bN\b/.test(completedMarker) || /\bNO\b/.test(completedMarker);
@@ -271,11 +268,6 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
     extractByPattern(content, [/\b(draft|finished|synced|sync failed|printed|open|closed)\b/i]);
 
   const fields = {
-    jobId: {
-      value: jobId,
-      confidence: kvJobId.confidence ?? confidenceForValue(jobId, words),
-      found: Boolean(jobId),
-    },
     date: {
       value: date,
       confidence: kvDate.confidence ?? confidenceForValue(date, words),
@@ -321,10 +313,10 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
       confidence: kvMaterialsOther.confidence ?? confidenceForValue(materialsOther, words),
       found: Boolean(materialsOther),
     },
-    additionalNotes: {
-      value: additionalNotes,
-      confidence: kvAdditionalNotes.confidence ?? confidenceForValue(additionalNotes, words),
-      found: Boolean(additionalNotes),
+    total: {
+      value: total,
+      confidence: kvTotal.confidence ?? confidenceForValue(total, words),
+      found: Boolean(total),
     },
     status: {
       value: status,

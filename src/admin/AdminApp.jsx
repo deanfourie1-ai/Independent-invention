@@ -26,6 +26,10 @@ const DEFAULT_TASKS = [
 const TASKS_KEY = 'tidewell.admin.checklist';
 const PROGRESS_KEY = 'tidewell.admin.captureV2';
 
+// Temporarily suppress the capture checklist — finishing only needs an invoice
+// number. Flip to true to bring the checklist back.
+const SHOW_CHECKLIST = false;
+
 function loadTasks() {
   try {
     const stored = JSON.parse(localStorage.getItem(TASKS_KEY));
@@ -365,6 +369,7 @@ export default function AdminApp({ workspaceSwitch }) {
                 selectedId={job?.id}
                 onSelect={selectJob}
                 onDelete={openDeleteDialog}
+                showChecklist={SHOW_CHECKLIST}
               />
 
               <div>
@@ -384,6 +389,7 @@ export default function AdminApp({ workspaceSwitch }) {
                   onToggle={toggleTask}
                   onSaveInvoice={saveInvoiceNumber}
                   onFinish={finishJob}
+                  showChecklist={SHOW_CHECKLIST}
                 />
               )}
             </div>

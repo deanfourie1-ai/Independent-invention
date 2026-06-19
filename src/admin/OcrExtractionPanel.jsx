@@ -89,7 +89,7 @@ function isPdfMime(mime) {
 /* Numeric cost fields where typing an expression like "443+399" should
    evaluate to its result. Date/text fields are deliberately excluded so a
    value like "2026-06-05" is never mistaken for subtraction. */
-const CALCULABLE_FIELDS = new Set(['callOutFee', 'labour', 'materialsOther']);
+const CALCULABLE_FIELDS = new Set(['callOutFee', 'labour', 'materialsOther', 'total']);
 
 /* Safely evaluate a simple arithmetic expression (digits, + - * / and
    parentheses only). Returns the original string if it isn't a pure
@@ -443,8 +443,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const materials = String(fields.materialsUsed?.value || '').trim();
     const callOutFee = String(fields.callOutFee?.value || '').trim();
     const labour = String(fields.labour?.value || '').trim();
-    const materialsOther = String(fields.materialsOther?.value || '').trim();
-    const additionalNotes = String(fields.additionalNotes?.value || '').trim();
+    const total = String(fields.total?.value || '').trim();
 
     setSaving(true);
     setError('');
@@ -475,8 +474,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         charges: {
           callOutFee,
           labour,
-          materials: materialsOther,
-          notes: additionalNotes,
+          total,
         },
         customer: {
           name: customerName || deriveCustomerName(result),
@@ -540,15 +538,13 @@ export default function OcrExtractionPanel({ job, onCreated }) {
 
     const callOutFee = String(fields.callOutFee?.value || '').trim();
     const labour = String(fields.labour?.value || '').trim();
-    const materialsOther = String(fields.materialsOther?.value || '').trim();
-    const additionalNotes = String(fields.additionalNotes?.value || '').trim();
-    if (callOutFee || labour || materialsOther || additionalNotes) {
+    const total = String(fields.total?.value || '').trim();
+    if (callOutFee || labour || total) {
       patch.charges = {
         ...(job.charges || {}),
         ...(callOutFee ? { callOutFee } : {}),
         ...(labour ? { labour } : {}),
-        ...(materialsOther ? { materials: materialsOther } : {}),
-        ...(additionalNotes ? { notes: additionalNotes } : {}),
+        ...(total ? { total } : {}),
       };
     }
 

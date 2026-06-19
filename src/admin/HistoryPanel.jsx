@@ -196,9 +196,7 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
               </thead>
               <tbody>
                 {filtered.map((job) => {
-                  const callOut = parseAmount(job.charges?.callOutFee);
-                  const labour = parseAmount(job.charges?.labour);
-                  const total = callOut + labour;
+                  const total = parseAmount(job.charges?.total);
                   const customer = job.customer?.name || '—';
                   const invoiceCustomer = job.invoiceCustomer || '';
                   const billsDiff = invoiceCustomer && invoiceCustomer !== customer;

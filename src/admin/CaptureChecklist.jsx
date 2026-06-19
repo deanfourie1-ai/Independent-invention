@@ -8,11 +8,13 @@ export default function CaptureChecklist({
   onToggle,
   onFinish,
   onSaveInvoice,
+  showChecklist = true,
 }) {
   const active = tasks.filter((t) => t.text.trim());
   const done = progress || {};
   const doneCount = active.reduce((n, t) => n + (done[t.id] ? 1 : 0), 0);
-  const complete = active.length > 0 && doneCount === active.length;
+  // When the checklist is suppressed, finishing only requires an invoice number.
+  const complete = !showChecklist || (active.length > 0 && doneCount === active.length);
 
   const [invoiceDraft, setInvoiceDraft] = useState(job?.invoiceNumber || '');
   const [invoiceCustomerDraft, setInvoiceCustomerDraft] = useState(
@@ -61,40 +63,44 @@ export default function CaptureChecklist({
     <div className="cap-check">
       <div className="cap-check-head">
         <div>
-          <div className="ttl">Capture checklist</div>
-          <div className="by">Set by administrator</div>
+          <div className="ttl">{showChecklist ? 'Capture checklist' : 'Finish capture'}</div>
+          <div className="by">{showChecklist ? 'Set by administrator' : 'Enter the invoice number, then finish'}</div>
         </div>
-        <span className={'cap-cbadge' + (complete ? ' done' : '')}>
-          <Icon name="check" size={12} stroke={3} />
-          {doneCount}/{active.length}
-        </span>
+        {showChecklist && (
+          <span className={'cap-cbadge' + (complete ? ' done' : '')}>
+            <Icon name="check" size={12} stroke={3} />
+            {doneCount}/{active.length}
+          </span>
+        )}
       </div>
 
       <div className="cap-check-body">
         {/* checklist items */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {active.map((t) => (
-            <div
-              key={t.id}
-              className="cap-citem"
-              onClick={() => onToggle(t.id)}
-              role="checkbox"
-              aria-checked={!!done[t.id]}
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(t.id); }}
-            >
-              <div className={'cap-cbox' + (done[t.id] ? ' on' : '')}>
-                <Icon name="check" size={12} stroke={3} />
-              </div>
-              <span
-                className="lbl"
-                style={done[t.id] ? { textDecoration: 'line-through', color: 'var(--ink-3)' } : {}}
+        {showChecklist && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {active.map((t) => (
+              <div
+                key={t.id}
+                className="cap-citem"
+                onClick={() => onToggle(t.id)}
+                role="checkbox"
+                aria-checked={!!done[t.id]}
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(t.id); }}
               >
-                {t.text}
-              </span>
-            </div>
-          ))}
-        </div>
+                <div className={'cap-cbox' + (done[t.id] ? ' on' : '')}>
+                  <Icon name="check" size={12} stroke={3} />
+                </div>
+                <span
+                  className="lbl"
+                  style={done[t.id] ? { textDecoration: 'line-through', color: 'var(--ink-3)' } : {}}
+                >
+                  {t.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* invoice reference */}
         <div className="cap-invref">
@@ -147,6 +153,7 @@ export default function CaptureChecklist({
           onClick={handleFinish}
           disabled={!complete || finishing}
           title={complete ? 'File this card to History' : 'Tick all checklist items first'}
+          aria-label="Finish capture"
         >
           <Icon name="check" size={17} stroke={3} />
           <span>{finishing ? 'Filing...' : 'Finish — file to History'}</span>

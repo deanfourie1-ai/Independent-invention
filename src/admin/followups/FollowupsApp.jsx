@@ -4,7 +4,7 @@ import { FI } from './icons';
 import { S } from './helpers';
 import useFollowups from '../../hooks/useFollowups';
 import {
-  addInteraction, patchCustomer, addCustomer, replaceCustomers,
+  addInteraction, patchCustomer, addCustomer, deleteCustomer, replaceCustomers,
 } from '../../services/followups';
 
 const LOGGED_BY = 'Admin';
@@ -66,10 +66,10 @@ function ImportBand({ meta, count, total, invoiceCount, onReimport }) {
     <div className="sl-import">
       <span className="xl"><FI.excel /></span>
       <div className="meta">
-        <div className="ttl">{meta.file} <span className="sheet">· {meta.sheet}</span></div>
+        <div className="ttl">{meta.file}</div>
         <div className="sub">{meta.date ? `Imported ${meta.date}${meta.time ? ', ' + meta.time : ''} · ` : ''}<b>{count} follow-up task{count === 1 ? '' : 's'}</b>{invoiceCount ? ` from ${invoiceCount} invoices` : ''} · {S.fmtR(total)} outstanding</div>
       </div>
-      <button className="tw-btn" onClick={onReimport}><FI.upload />Update from Excel</button>
+      <button className="tw-btn" onClick={onReimport}><FI.upload />Upload Excel list</button>
     </div>);
 }
 
@@ -94,7 +94,11 @@ function ActionRow({ r, onOpen }) {
     <div className="sl-item" onClick={() => onOpen(c.id)}>
       <div className="who">
         <div className="nm">{c.name}</div>
-        <div className="meta2">{c.contact && c.contact !== '—' ? c.contact : 'Added manually'}</div>
+        <div className="meta2">
+          {c.contact && c.contact !== '—'
+            ? <><FI.user style={{ width: 12, height: 12, verticalAlign: -2, marginRight: 4 }} />{c.contact}</>
+            : 'Added manually'}
+        </div>
         {(c.phone || c.email) &&
           <div className="sl-contactline">
             {c.phone && <span className="ci"><FI.phone />{c.phone}</span>}
@@ -167,7 +171,10 @@ function HistoryGroups({ groups, query, onOpen }) {
           return (
             <div className="sl-crow" key={g.id} onClick={() => onOpen(g.id)}>
               <div className="who">
-                <div className="nm">{hl(g.name)}</div>
+                <div className="nmrow">
+                  <div className="nm">{hl(g.name)}</div>
+                  {g.settled && <span className="sl-paidflag"><FI.checkc />Fully paid</span>}
+                </div>
                 <div className="cnt">{g.entries.length} interaction{g.entries.length > 1 ? 's' : ''}</div>
               </div>
               <div className="prev">
@@ -249,7 +256,7 @@ function PrintDoc({ customer, entries }) {
 }
 
 /* ── customer drawer: combined history + log ── */
-function CustomerDrawer({ customer, history, onClose, onSave }) {
+function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
   const [did, setDid] = useState('call');
   const [said, setSaid] = useState('');
   const [fuOn, setFuOn] = useState(true);
@@ -257,6 +264,7 @@ function CustomerDrawer({ customer, history, onClose, onSave }) {
   const [fuTime, setFuTime] = useState('09:00');
   const [osStr, setOsStr] = useState('');
   const [invPaid, setInvPaid] = useState({});
+  const [confirmDel, setConfirmDel] = useState(false);
   const c = customer || {};
 
   useEffect(() => {
@@ -267,6 +275,7 @@ function CustomerDrawer({ customer, history, onClose, onSave }) {
       (customer.invoices || []).forEach((iv) => { if (iv.paid) paid[iv.no] = true; });
       setInvPaid(paid);
       setOsStr(String(S.owed(customer)));
+      setConfirmDel(false);
     }
   }, [customer]);
 
@@ -302,8 +311,21 @@ function CustomerDrawer({ customer, history, onClose, onSave }) {
             <div className="ttl">{c.name}</div>
             <div className="sl-contact">{[c.contact, c.phone, c.email].filter((x) => x && x !== '—').join(' · ') || 'Manual follow-up — not in the import'}</div>
           </div>
-          <button className="tw-btn tw-icbtn" onClick={onClose}><FI.x /></button>
+          <div className="sl-headacts">
+            <button className="tw-btn tw-icbtn sl-trash" title="Delete this follow-up task" aria-label="Delete this follow-up task" onClick={() => setConfirmDel(true)}><FI.trash /></button>
+            <button className="tw-btn tw-icbtn" onClick={onClose}><FI.x /></button>
+          </div>
         </div>
+
+        {confirmDel && (
+          <div className="sl-delbar">
+            <span><b>Delete this follow-up task?</b> Its interaction log will be removed too — this can’t be undone.</span>
+            <div className="acts">
+              <button className="tw-btn tw-btn--sm" onClick={() => setConfirmDel(false)}>Cancel</button>
+              <button className="tw-btn tw-btn--sm sl-delconfirm" onClick={() => onDelete?.(c.id)}><FI.trash />Delete task</button>
+            </div>
+          </div>
+        )}
 
         <div className="sl-logbody">
           <div className="logmain">
@@ -324,14 +346,14 @@ function CustomerDrawer({ customer, history, onClose, onSave }) {
                     const paid = !!invPaid[iv.no];
                     return (
                       <label className={'invrow' + (paid ? ' paid' : '')} key={iv.no}>
-                        <input type="checkbox" checked={!paid} onChange={() => toggleInv(iv.no)} />
+                        <input type="checkbox" checked={paid} onChange={() => toggleInv(iv.no)} />
                         <span className="no">{iv.no}</span>
                         <span className="amt">{S.fmtR(iv.amount)}</span>
                         <span className={'days ' + (iv.days >= 90 ? 't90' : iv.days >= 60 ? 't60' : iv.days >= 30 ? 't30' : 't0')}>{iv.days}d</span>
                         <span className="state">{paid ? 'Paid' : 'Affected'}</span>
                       </label>);
                   })}
-                  <div className="hint">Untick an invoice as it’s settled — the total updates. Or type the exact amount for a partial payment.</div>
+                  <div className="hint">Tick an invoice once it’s paid — the total updates. Or type the exact amount for a partial payment.</div>
                 </div>
               ) : (
                 <div className="sl-noinv"><FI.flag />No invoice on file — added as a manual follow-up.</div>
@@ -504,17 +526,17 @@ function DayBar({ workDate, onSet, counts }) {
 /* ── settings (customers) ── */
 function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddCustomer }) {
   const [editId, setEditId] = useState(null);
-  const [draft, setDraft] = useState({ phone: '', email: '', address: '' });
+  const [draft, setDraft] = useState({ contact: '', phone: '', email: '', address: '' });
   const [adding, setAdding] = useState(false);
-  const [newC, setNewC] = useState({ name: '', phone: '', email: '', address: '' });
+  const [newC, setNewC] = useState({ name: '', contact: '', phone: '', email: '', address: '' });
 
-  useEffect(() => { if (open) { setEditId(null); setAdding(false); setNewC({ name: '', phone: '', email: '', address: '' }); } }, [open]);
+  useEffect(() => { if (open) { setEditId(null); setAdding(false); setNewC({ name: '', contact: '', phone: '', email: '', address: '' }); } }, [open]);
   if (!open) return null;
 
   const sorted = [...customers].sort((a, b) => a.name.localeCompare(b.name));
-  const startEdit = (c) => { setEditId(c.id); setDraft({ phone: c.phone || '', email: c.email || '', address: c.address || '' }); setAdding(false); };
+  const startEdit = (c) => { setEditId(c.id); setDraft({ contact: c.contact || '', phone: c.phone || '', email: c.email || '', address: c.address || '' }); setAdding(false); };
   const commitEdit = () => { onSaveCustomer(editId, draft); setEditId(null); };
-  const commitAdd = () => { if (!newC.name.trim()) return; onAddCustomer({ ...newC, name: newC.name.trim() }); setAdding(false); setNewC({ name: '', phone: '', email: '', address: '' }); };
+  const commitAdd = () => { if (!newC.name.trim()) return; onAddCustomer({ ...newC, name: newC.name.trim() }); setAdding(false); setNewC({ name: '', contact: '', phone: '', email: '', address: '' }); };
 
   return (
     <div className="sl-modal-scrim" onClick={onClose}>
@@ -541,6 +563,8 @@ function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddCustomer
                 <input className="nm-in" placeholder="Customer / company name" value={newC.name} autoFocus onChange={(e) => setNewC({ ...newC, name: e.target.value })} />
               </div>
               <div className="ca-fields">
+                <label className="f wide"><span className="k"><FI.user />Contact person</span>
+                  <input placeholder="e.g. Thabo Mokoena" value={newC.contact} onChange={(e) => setNewC({ ...newC, contact: e.target.value })} /></label>
                 <label className="f"><span className="k"><FI.phone />Telephone</span>
                   <input placeholder="e.g. 021 555 0100" value={newC.phone} onChange={(e) => setNewC({ ...newC, phone: e.target.value })} /></label>
                 <label className="f"><span className="k"><FI.mail />Email</span>
@@ -556,7 +580,7 @@ function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddCustomer
 
           {sorted.map((c) => {
             const editing = editId === c.id;
-            const has = c.phone || c.email || c.address;
+            const has = c.contact || c.phone || c.email || c.address;
             return (
               <div className={'sl-custcard' + (editing ? ' editing' : '')} key={c.id}>
                 <div className="ca-head">
@@ -567,6 +591,8 @@ function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddCustomer
                 {editing
                   ? <>
                       <div className="ca-fields">
+                        <label className="f wide"><span className="k"><FI.user />Contact person</span>
+                          <input placeholder="e.g. Thabo Mokoena" value={draft.contact} onChange={(e) => setDraft({ ...draft, contact: e.target.value })} /></label>
                         <label className="f"><span className="k"><FI.phone />Telephone</span>
                           <input placeholder="e.g. 021 555 0100" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} /></label>
                         <label className="f"><span className="k"><FI.mail />Email</span>
@@ -580,6 +606,7 @@ function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddCustomer
                       </div>
                     </>
                   : <div className="ca-view">
+                      {c.contact && c.contact !== '—' && <span className="ci"><FI.user />{c.contact}</span>}
                       {c.phone && <span className="ci"><FI.phone />{c.phone}</span>}
                       {c.email && <span className="ci"><FI.mail />{c.email}</span>}
                       {c.address && <span className="ci addr"><FI.pin />{c.address}</span>}
@@ -607,27 +634,152 @@ function Brand() {
     </div>);
 }
 
-/* ── Excel aged-debtors parser ── */
-function parseAgedDebtors(rows) {
-  if (!rows.length) return [];
-  const keys = Object.keys(rows[0]);
-  const find = (re) => keys.find((k) => re.test(k));
-  const kName = find(/customer|client|account|name|debtor/i);
-  const kInv  = find(/invoice|inv\b|doc|reference|ref\b/i);
-  const kAmt  = find(/amount|outstanding|balance|total|due|value/i);
-  const kDays = find(/days|age|ageing|aging/i);
-  if (!kName || !kAmt) return [];
-  const out = [];
-  let auto = 0;
-  rows.forEach((r) => {
-    const name = String(r[kName] ?? '').trim();
-    const amount = Math.round(Number(String(r[kAmt] ?? '').replace(/[^\d.-]/g, '')) || 0);
-    if (!name || !amount) return;
-    const no = kInv ? String(r[kInv] ?? '').trim() : '';
-    const days = kDays ? Math.round(Number(String(r[kDays] ?? '').replace(/[^\d.-]/g, '')) || 0) : 0;
-    out.push({ name, invoice: { no: no || `IMP-${++auto}`, amount, days } });
+/* ── Excel import: column-mapping helpers ──────────────────────────
+   The importer reads the sheet as raw rows (array-of-arrays) so it works
+   even with no header row, then the user maps which column is which. */
+const MAP_KEY = 'tidewell.followups.colmap';
+const MAP_FIELDS = [
+  { key: 'customer', label: 'Customer name', req: true },
+  { key: 'amount', label: 'Amount outstanding', req: true },
+  { key: 'invoice', label: 'Invoice number', req: false },
+  { key: 'date', label: 'Invoice date', req: false },
+  { key: 'days', label: 'Days overdue', req: false },
+];
+
+function colLetter(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+function parseMoney(v) { const n = Number(String(v ?? '').replace(/[^\d.-]/g, '')); return Number.isFinite(n) ? Math.round(n) : 0; }
+function isoFromDateCell(v) {
+  if (v instanceof Date && !isNaN(v)) return v.toISOString().slice(0, 10);
+  if (typeof v === 'number' && v > 0) { const d = new Date(Math.round((v - 25569) * 86400000)); return isNaN(d) ? null : d.toISOString().slice(0, 10); }
+  const t = Date.parse(String(v)); return isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
+}
+function daysFromCell(v) { const iso = isoFromDateCell(v); return iso ? Math.max(0, S.daysBetween(iso, S.today)) : 0; }
+
+function deriveColumns(aoa, hasHeader) {
+  const colCount = aoa.reduce((m, r) => Math.max(m, r.length), 0);
+  const dataRows = hasHeader ? aoa.slice(1) : aoa;
+  const header = hasHeader ? (aoa[0] || []) : null;
+  const columns = [];
+  for (let i = 0; i < colCount; i++) {
+    const label = hasHeader && header[i] != null && String(header[i]).trim()
+      ? String(header[i]).trim() : 'Column ' + colLetter(i);
+    const sampleRow = dataRows.find((r) => r[i] !== '' && r[i] != null);
+    columns.push({ index: i, label, sample: sampleRow ? String(sampleRow[i] instanceof Date ? sampleRow[i].toLocaleDateString() : sampleRow[i]) : '' });
+  }
+  return { columns, dataRows };
+}
+
+function guessHeader(aoa) {
+  const row0 = aoa[0] || [];
+  const re = /customer|client|account|name|debtor|amount|outstanding|balance|invoice|date|days|age|total/i;
+  return row0.filter((c) => typeof c === 'string' && re.test(c)).length >= 2;
+}
+
+function guessByContent(columns, dataRows) {
+  const isNumish = (v) => v !== '' && v != null && !(v instanceof Date) && (typeof v === 'number' || /^[R\s]*-?[\d.,]+$/.test(String(v).trim()));
+  const stats = columns.map((c) => {
+    const vals = dataRows.map((r) => r[c.index]).filter((v) => v !== '' && v != null);
+    return {
+      index: c.index,
+      numFrac: vals.length ? vals.filter(isNumish).length / vals.length : 0,
+      hasDec: vals.some((v) => /[.,]\d{2}\b/.test(String(v))),
+      isDate: vals.some((v) => v instanceof Date),
+      count: vals.length,
+    };
   });
-  return out;
+  const text = stats.filter((s) => s.count && s.numFrac < 0.4 && !s.isDate);
+  const nums = stats.filter((s) => s.numFrac > 0.6 && !s.isDate);
+  const dateCol = stats.find((s) => s.isDate);
+  return {
+    customer: (text[0] || columns[0] || {}).index ?? null,
+    amount: ((nums.find((s) => s.hasDec) || nums[0]) || {}).index ?? null,
+    invoice: null,
+    date: dateCol ? dateCol.index : null,
+    days: null,
+  };
+}
+
+function initialMap(columns, dataRows, savedMap, hasHeader) {
+  if (savedMap && savedMap.colCount === columns.length) {
+    return { customer: savedMap.customer ?? null, amount: savedMap.amount ?? null, invoice: savedMap.invoice ?? null, date: savedMap.date ?? null, days: savedMap.days ?? null };
+  }
+  if (hasHeader) {
+    const find = (re) => { const c = columns.find((c) => re.test(c.label)); return c ? c.index : null; };
+    const m = { customer: find(/customer|client|account|name|debtor/i), amount: find(/amount|outstanding|balance|total|due|value/i), invoice: find(/invoice|inv\b|doc|reference|ref\b/i), date: find(/date/i), days: find(/days|age/i) };
+    if (m.customer != null && m.amount != null) return m;
+    return { ...guessByContent(columns, dataRows), ...Object.fromEntries(Object.entries(m).filter(([, v]) => v != null)) };
+  }
+  return guessByContent(columns, dataRows);
+}
+
+function ImportMapModal({ draft, savedMap, onCancel, onConfirm }) {
+  const [hasHeader, setHasHeader] = useState(() => guessHeader(draft.aoa));
+  const { columns, dataRows } = useMemo(() => deriveColumns(draft.aoa, hasHeader), [draft.aoa, hasHeader]);
+  const [map, setMap] = useState(() => initialMap(columns, dataRows, savedMap, hasHeader));
+
+  const setField = (k, v) => setMap((m) => ({ ...m, [k]: v === '' ? null : Number(v) }));
+  const valid = map.customer != null && map.amount != null;
+  const trunc = (s) => { s = String(s ?? ''); return s.length > 24 ? s.slice(0, 23) + '…' : s; };
+  const cellDays = (r) => map.days != null ? Math.max(0, Math.round(Number(String(r[map.days]).replace(/[^\d.-]/g, '')) || 0)) : map.date != null ? daysFromCell(r[map.date]) : 0;
+  const preview = dataRows.slice(0, 5).map((r) => ({
+    customer: map.customer != null ? String(r[map.customer] ?? '') : '',
+    invoice: map.invoice != null ? (String(r[map.invoice] ?? '').trim() || '—') : '—',
+    amount: map.amount != null ? parseMoney(r[map.amount]) : 0,
+    days: cellDays(r),
+  }));
+
+  return (
+    <div className="sl-modal-scrim" onClick={onCancel}>
+      <div className="sl-modal sl-mapmodal" onClick={(e) => e.stopPropagation()}>
+        <div className="head">
+          <div>
+            <div className="tw-eyebrow">Import from Excel</div>
+            <div className="ttl">Map your columns</div>
+            <div className="sl-contact">{draft.fileName} · {draft.sheetName} · {dataRows.length} row{dataRows.length === 1 ? '' : 's'}</div>
+          </div>
+          <button className="tw-btn tw-icbtn" onClick={onCancel}><FI.x /></button>
+        </div>
+        <div className="body">
+          <label className="sl-headtoggle">
+            <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} />
+            First row contains column headings
+          </label>
+          <div className="sl-map-grid">
+            {MAP_FIELDS.map((f) => (
+              <div className="sl-map-field" key={f.key}>
+                <span className="k">{f.label}{f.req && <span className="req">*</span>}</span>
+                <select className="sl-msel" value={map[f.key] == null ? '' : map[f.key]} onChange={(e) => setField(f.key, e.target.value)}>
+                  <option value="">— none —</option>
+                  {columns.map((c) => <option key={c.index} value={c.index}>{c.label}{c.sample ? ` · e.g. ${trunc(c.sample)}` : ''}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+          <div className="sl-q" style={{ marginBottom: 8 }}>Preview</div>
+          <div className="sl-map-preview">
+            <table>
+              <thead><tr><th>Customer</th><th>Invoice</th><th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'right' }}>Days</th></tr></thead>
+              <tbody>
+                {preview.map((p, i) => (
+                  <tr key={i}>
+                    <td>{p.customer || <span className="muted">—</span>}</td>
+                    <td className="mono">{p.invoice}</td>
+                    <td style={{ textAlign: 'right' }}>{p.amount ? S.fmtR(p.amount) : '—'}</td>
+                    <td style={{ textAlign: 'right' }}>{p.days || 0}d</td>
+                  </tr>))}
+              </tbody>
+            </table>
+          </div>
+          {!valid && <div className="sl-map-hint">Pick at least the <b>Customer name</b> and <b>Amount</b> columns to continue.</div>}
+        </div>
+        <div className="foot">
+          <button className="tw-btn tw-btn--primary" disabled={!valid} style={{ flex: 1, justifyContent: 'center', height: 42 }} onClick={() => onConfirm({ map, hasHeader })}>
+            <FI.upload />Import {dataRows.length} row{dataRows.length === 1 ? '' : 's'}
+          </button>
+          <button className="tw-btn" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>);
 }
 
 export default function FollowupsApp({ workspaceSwitch }) {
@@ -644,6 +796,10 @@ export default function FollowupsApp({ workspaceSwitch }) {
   const [toast, setToast] = useState(null);
   const [importMeta, setImportMeta] = useState(() => {
     try { return JSON.parse(localStorage.getItem(IMPORT_KEY)) || DEFAULT_IMPORT; } catch { return DEFAULT_IMPORT; }
+  });
+  const [importDraft, setImportDraft] = useState(null);
+  const [savedMap, setSavedMap] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(MAP_KEY)) || null; } catch { return null; }
   });
   const toastTimer = useRef(null);
   const fileRef = useRef(null);
@@ -685,7 +841,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
     const m = new Map();
     for (const a of interactions) {
       if (a.did === 'task') continue;
-      if (!m.has(a.customerId)) m.set(a.customerId, { id: a.customerId, name: nameById(a.customerId), entries: [] });
+      if (!m.has(a.customerId)) m.set(a.customerId, { id: a.customerId, name: nameById(a.customerId), settled: !!custById[a.customerId]?.settled, entries: [] });
       m.get(a.customerId).entries.push(a);
     }
     return [...m.values()];
@@ -695,8 +851,6 @@ export default function FollowupsApp({ workspaceSwitch }) {
     if (!s) return histGroups;
     return histGroups.filter((g) => (g.name + ' ' + g.entries.map((e) => e.said + ' ' + (e.invoice || '')).join(' ')).toLowerCase().includes(s));
   }, [histGroups, histQuery]);
-  const realCount = useMemo(() => interactions.filter((a) => a.did !== 'task').length, [interactions]);
-
   const totalOwed = customers.filter((c) => !c.settled).reduce((s, c) => s + S.owed(c), 0);
   const owingCount = customers.filter((c) => !c.settled && S.owed(c) > 0).length;
   const openInvCount = customers.filter((c) => !c.settled).reduce((s, c) => s + S.openInvoices(c).length, 0);
@@ -730,13 +884,20 @@ export default function FollowupsApp({ workspaceSwitch }) {
         : c.name + ' marked settled — removed from the list');
   };
 
-  const saveCustomerDetails = async (id, { phone, email, address }) => {
-    await patchCustomer(id, { phone: phone.trim(), email: email.trim() || null, address: address.trim() || null });
+  const deleteTask = async (id) => {
+    const target = custById[id];
+    setDrawerId(null);
+    await deleteCustomer(id);
+    flash(`${target?.name || 'Follow-up'} deleted`);
+  };
+
+  const saveCustomerDetails = async (id, { contact, phone, email, address }) => {
+    await patchCustomer(id, { contact: (contact || '').trim(), phone: phone.trim(), email: email.trim() || null, address: address.trim() || null });
     flash('Contact details saved');
   };
-  const addCustomerFromSettings = async ({ name, phone, email, address }) => {
+  const addCustomerFromSettings = async ({ name, contact, phone, email, address }) => {
     await addCustomer({
-      id: 'C-S' + Date.now(), name, contact: '', phone: phone.trim(), email: email.trim() || null,
+      id: 'C-S' + Date.now(), name, contact: (contact || '').trim(), phone: phone.trim(), email: email.trim() || null,
       address: address.trim() || null, invoices: [],
     });
     flash(name + ' added to customers');
@@ -786,51 +947,64 @@ export default function FollowupsApp({ workspaceSwitch }) {
     setTimeout(() => { window.print(); }, 60);
   };
 
-  // Real Excel import: parse aged-debtors sheet, dedupe by invoice number against
-  // existing customers (matched by name), append new invoices/customers.
+  // Step 1 of import: read the sheet as raw rows and open the column mapper.
   const handleImportFile = async (file) => {
     if (!file) return;
     try {
       const xlsx = await import('xlsx');
       const buf = await file.arrayBuffer();
-      const wb = xlsx.read(buf, { type: 'array' });
-      const sheetName = wb.SheetNames.find((n) => /debtor|aged|outstand/i.test(n)) || wb.SheetNames[0];
-      const json = xlsx.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
-      const parsed = parseAgedDebtors(json);
-      if (!parsed.length) {
-        flash('No usable rows found — expected customer name + amount columns.');
-        return;
-      }
-      const norm = (s) => String(s || '').trim().toLowerCase();
-      const byName = new Map(customers.map((c) => [norm(c.name), { ...c, invoices: [...(c.invoices || [])] }]));
-      let addedInvoices = 0, addedCustomers = 0, skipped = 0, addedValue = 0, auto = 0;
-      parsed.forEach((row) => {
-        const key = norm(row.name);
-        const existing = byName.get(key);
-        if (existing) {
-          if ((existing.invoices || []).some((i) => i.no === row.invoice.no)) { skipped++; return; }
-          existing.invoices.push(row.invoice);
-          if (typeof existing.outstanding === 'number') existing.outstanding += row.invoice.amount;
-          existing.settled = false;
-          addedInvoices++; addedValue += row.invoice.amount;
-        } else {
-          byName.set(key, {
-            id: 'C-IMP' + Date.now() + '-' + (++auto), name: row.name, contact: '',
-            phone: '', email: null, invoices: [row.invoice],
-          });
-          addedCustomers++; addedInvoices++; addedValue += row.invoice.amount;
-        }
-      });
-      await replaceCustomers([...byName.values()]);
-      setImportMeta({ file: file.name, sheet: sheetName, date: S.isoToDisp(S.TODAY_ISO), time: nowTime() });
-      const parts = [];
-      if (addedCustomers) parts.push(`${addedCustomers} new customer${addedCustomers > 1 ? 's' : ''}`);
-      if (addedInvoices) parts.push(`${addedInvoices} new invoice${addedInvoices > 1 ? 's' : ''} (+${S.fmtR(addedValue)})`);
-      if (skipped) parts.push(`${skipped} already on file (skipped)`);
-      flash('Imported · ' + (parts.join(' · ') || 'nothing new'));
+      const wb = xlsx.read(buf, { type: 'array', cellDates: true });
+      const sheetName = wb.SheetNames.find((n) => /debtor|aged|outstand|invoice|invorder/i.test(n)) || wb.SheetNames[0];
+      const aoa = xlsx.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' })
+        .filter((r) => Array.isArray(r) && r.some((c) => c !== '' && c != null));
+      if (!aoa.length) { flash('That sheet looks empty.'); return; }
+      setImportDraft({ fileName: file.name, sheetName, aoa });
     } catch (err) {
       flash('Could not read that file: ' + (err?.message || 'unknown error'));
     }
+  };
+
+  // Step 2 of import: apply the chosen column mapping, dedupe by invoice number
+  // against existing customers (matched by name), and persist.
+  const commitImport = async ({ map, hasHeader }) => {
+    if (!importDraft) return;
+    const { dataRows, columns } = deriveColumns(importDraft.aoa, hasHeader);
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const byName = new Map(customers.map((c) => [norm(c.name), { ...c, invoices: [...(c.invoices || [])] }]));
+    let addedInvoices = 0, addedCustomers = 0, skipped = 0, addedValue = 0, autoInv = 0, autoId = 0;
+    dataRows.forEach((r) => {
+      const name = String(r[map.customer] ?? '').trim();
+      const amount = parseMoney(r[map.amount]);
+      if (!name || !amount) return;
+      let days = 0;
+      if (map.days != null) days = Math.max(0, Math.round(Number(String(r[map.days]).replace(/[^\d.-]/g, '')) || 0));
+      else if (map.date != null) days = daysFromCell(r[map.date]);
+      const no = (map.invoice != null ? String(r[map.invoice] ?? '').trim() : '') || ('IMP-' + (++autoInv));
+      const key = norm(name);
+      const existing = byName.get(key);
+      if (existing) {
+        if ((existing.invoices || []).some((i) => i.no === no)) { skipped++; return; }
+        existing.invoices.push({ no, amount, days });
+        if (typeof existing.outstanding === 'number') existing.outstanding += amount;
+        existing.settled = false;
+        addedInvoices++; addedValue += amount;
+      } else {
+        byName.set(key, { id: 'C-IMP' + Date.now() + '-' + (++autoId), name, contact: '', phone: '', email: null, invoices: [{ no, amount, days }] });
+        addedCustomers++; addedInvoices++; addedValue += amount;
+      }
+    });
+    if (!addedInvoices) { flash('No rows imported — check the Customer and Amount columns.'); return; }
+    await replaceCustomers([...byName.values()]);
+    const nextMap = { ...map, hasHeader, colCount: columns.length };
+    try { localStorage.setItem(MAP_KEY, JSON.stringify(nextMap)); } catch (_) {}
+    setSavedMap(nextMap);
+    setImportMeta({ file: importDraft.fileName, sheet: importDraft.sheetName, date: S.isoToDisp(S.TODAY_ISO), time: nowTime() });
+    setImportDraft(null);
+    const parts = [];
+    if (addedCustomers) parts.push(`${addedCustomers} new customer${addedCustomers > 1 ? 's' : ''}`);
+    if (addedInvoices) parts.push(`${addedInvoices} invoice${addedInvoices > 1 ? 's' : ''} (+${S.fmtR(addedValue)})`);
+    if (skipped) parts.push(`${skipped} already on file (skipped)`);
+    flash('Imported · ' + parts.join(' · '));
   };
 
   const drawerCust = drawerId ? custById[drawerId] : null;
@@ -875,7 +1049,6 @@ export default function FollowupsApp({ workspaceSwitch }) {
               </button>
               <button className={'tw-tab' + (tab === 'history' ? ' is-active' : '')} onClick={() => setTab('history')} style={{ borderRadius: '9px 9px 0 0', marginBottom: -1 }}>
                 <FI.history />History
-                <span className="tw-count">{realCount}</span>
               </button>
             </div>
             <button className="tw-btn tw-btn--primary sl-newtask" onClick={() => setShowTask(true)}><FI.plus />New task</button>
@@ -903,12 +1076,13 @@ export default function FollowupsApp({ workspaceSwitch }) {
               </>}
         </div>
 
-        <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} />
+        <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} onDelete={deleteTask} />
         <TaskModal open={showTask} customers={customers} onClose={() => setShowTask(false)} onSave={saveTask} />
         <SettingsModal open={showSettings} customers={customers} onClose={() => setShowSettings(false)}
           onSaveCustomer={saveCustomerDetails} onAddCustomer={addCustomerFromSettings} />
         <InteractionsPopup customer={popupCust} entries={popupEntries} onClose={() => setPopupId(null)}
           onPrint={printInteractions} onExport={exportCsv} onLog={(id) => { setPopupId(null); setDrawerId(id); }} />
+        {importDraft && <ImportMapModal draft={importDraft} savedMap={savedMap} onCancel={() => setImportDraft(null)} onConfirm={commitImport} />}
         <div className={'sl-toast' + (toast ? ' show' : '')}><FI.check />{toast}</div>
       </div>
       <PrintDoc customer={printCust} entries={printEntries} />

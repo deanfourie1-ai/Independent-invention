@@ -37,9 +37,7 @@ export default function DetailDrawer({ row, onClose }) {
   const customer = j.customer?.name || '—';
   const invoiceCustomer = j.invoiceCustomer || customer;
   const billsDiff = invoiceCustomer && invoiceCustomer !== customer;
-  const callOut = parseAmount(j.charges?.callOutFee);
-  const labour = parseAmount(j.charges?.labour);
-  const total = callOut + labour;
+  const total = parseAmount(j.charges?.total);
   const hasImage = !!(j.oneDriveItemId || j.imagePath);
   const imageSrc = j.oneDriveItemId
     ? `/api/image/${j.oneDriveItemId}`

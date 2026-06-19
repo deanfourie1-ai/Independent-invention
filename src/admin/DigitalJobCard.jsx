@@ -118,19 +118,6 @@ function AssigneeRow({ value, onSave, copyKey, copied, onCopy }) {
   );
 }
 
-function CopyRow({ label, value, copyKey, copied, onCopy, multiline = false }) {
-  const shown = String(value ?? '').trim() || null;
-  return (
-    <div className={'cap-row' + (multiline ? ' cap-row--wide' : '')}>
-      <div className="k">{label}</div>
-      <div className={'v' + (shown ? '' : ' empty') + (multiline ? ' multi' : '')}>
-        {shown || '—'}
-      </div>
-      <CopyButton copyKey={copyKey} copied={copied} onCopy={onCopy} value={shown || ''} />
-    </div>
-  );
-}
-
 function Sec({ title, children }) {
   return (
     <div className="cap-sec">
@@ -142,7 +129,6 @@ function Sec({ title, children }) {
 
 export default function DigitalJobCard({ job, onUpdate }) {
   const [copied, setCopied] = useState(null);
-  const completed = ['finished', 'synced', 'printed'].includes(job.status);
   const jobId = job.ref || job.id;
 
   /* The scanned source file the OCR was run against — OneDrive item or local upload. */
@@ -196,17 +182,11 @@ export default function DigitalJobCard({ job, onUpdate }) {
           <Sec title="Job details">
             <AssigneeRow value={job.jobAssignedTo} onSave={(v) => onUpdate?.({ jobAssignedTo: v })} copyKey="jobAssignedTo" copied={copied} onCopy={copyField} />
             <EditableRow label="Date"            value={job.date}           type="date"                onSave={(v) => onUpdate?.({ date: v })}           copyKey="date"           copied={copied} onCopy={copyField} />
-            <EditableRow label="Duration"        value={job.duration}       placeholder="e.g. 2 hours" onSave={(v) => onUpdate?.({ duration: v })}       copyKey="duration"       copied={copied} onCopy={copyField} />
-            <CopyRow     label="Completed"       value={completed ? 'Yes' : 'No'} copyKey="completed" copied={copied} onCopy={copyField} />
-            <EditableRow label="Casual labour no" value={job.casualLabourNo} placeholder="—"           onSave={(v) => onUpdate?.({ casualLabourNo: v })} copyKey="casualLabourNo" copied={copied} onCopy={copyField} />
           </Sec>
 
           <Sec title="Client details">
             <EditableRow label="Name"    value={job.customer?.name}          onSave={(v) => patchCustomer('name', v)}          copyKey="customerName"    copied={copied} onCopy={copyField} />
             <EditableRow label="Address" value={job.customer?.address}       multiline onSave={(v) => patchCustomer('address', v)}  copyKey="customerAddress" copied={copied} onCopy={copyField} />
-            <EditableRow label="Contact" value={job.customer?.contactPerson} onSave={(v) => patchCustomer('contactPerson', v)} copyKey="contactPerson"   copied={copied} onCopy={copyField} />
-            <EditableRow label="Tel"     value={job.customer?.phone}         type="tel"  onSave={(v) => patchCustomer('phone', v)}     copyKey="phone"           copied={copied} onCopy={copyField} />
-            <EditableRow label="Email"   value={job.customer?.email}         type="email" onSave={(v) => patchCustomer('email', v)}    copyKey="email"           copied={copied} onCopy={copyField} />
           </Sec>
         </div>
 
@@ -219,7 +199,6 @@ export default function DigitalJobCard({ job, onUpdate }) {
           <EditableRow label="Labour"       value={job.charges?.labour}     onSave={(v) => patchCharges('labour', v)}     copyKey="labour"     copied={copied} onCopy={copyField} />
           <EditableRow label="Other costs"  value={job.charges?.materials}  onSave={(v) => patchCharges('materials', v)}  copyKey="otherCosts" copied={copied} onCopy={copyField} />
           <EditableRow label="Total"        value={job.charges?.total}      onSave={(v) => patchCharges('total', v)}      copyKey="total"      copied={copied} onCopy={copyField} />
-          <EditableRow label="Notes"        value={job.charges?.notes}      multiline onSave={(v) => patchCharges('notes', v)} copyKey="additionalNotes" copied={copied} onCopy={copyField} />
         </Sec>
 
         <Sec title="Materials used">

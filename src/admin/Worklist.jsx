@@ -17,7 +17,7 @@ function matchesSearch(job, query) {
   );
 }
 
-function QueueItem({ job, rec, tasks, selected, onClick, onDelete }) {
+function QueueItem({ job, rec, tasks, selected, onClick, onDelete, showChecklist = true }) {
   const tech = technicians[job.tech] || { initials: '??' };
   const tone = TECH_TONES[job.tech] || 'blue';
   const active = tasks.filter((t) => t.text.trim());
@@ -45,9 +45,11 @@ function QueueItem({ job, rec, tasks, selected, onClick, onDelete }) {
           <div className="nm">{job.customer.name}</div>
           <div className="sub"><span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{job.ref}</span> · {job.jobType}</div>
         </div>
-        <span className={'cap-prog' + (complete ? ' done' : '')}>
-          {complete ? <Icon name="check" size={13} stroke={3} /> : `${done}/${total}`}
-        </span>
+        {showChecklist && (
+          <span className={'cap-prog' + (complete ? ' done' : '')}>
+            {complete ? <Icon name="check" size={13} stroke={3} /> : `${done}/${total}`}
+          </span>
+        )}
       </div>
       {onDelete && (
         <button
@@ -64,7 +66,7 @@ function QueueItem({ job, rec, tasks, selected, onClick, onDelete }) {
   );
 }
 
-export default function Worklist({ queue, tasks, progress, selectedId, onSelect, onDelete }) {
+export default function Worklist({ queue, tasks, progress, selectedId, onSelect, onDelete, showChecklist = true }) {
   const [search, setSearch] = useState('');
 
   const filteredQueue = queue.filter((j) => matchesSearch(j, search));
@@ -104,6 +106,7 @@ export default function Worklist({ queue, tasks, progress, selectedId, onSelect,
             selected={j.id === selectedId}
             onClick={() => onSelect(j.id)}
             onDelete={onDelete}
+            showChecklist={showChecklist}
           />
         ))}
       </div>

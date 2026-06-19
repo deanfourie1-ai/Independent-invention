@@ -109,8 +109,11 @@ function writeJsonFile(file, data) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
 }
-const readCustomers    = () => readJsonFile(CUSTOMERS_FILE, DEFAULT_CUSTOMERS);
-const readInteractions = () => readJsonFile(INTERACTIONS_FILE, DEFAULT_INTERACTIONS);
+/* Sample data is only for development. The packaged .exe ships clean so the
+   client opens to an empty follow-up log + customer list, ready for their
+   first "Upload Excel list". */
+const readCustomers    = () => readJsonFile(CUSTOMERS_FILE,    isPkg ? [] : DEFAULT_CUSTOMERS);
+const readInteractions = () => readJsonFile(INTERACTIONS_FILE, isPkg ? [] : DEFAULT_INTERACTIONS);
 
 /* ── Graph API token cache ──────────────────────────────── */
 let _tok = { token: null, expiresAt: 0 };
@@ -388,6 +391,9 @@ export async function handleRequest(req, res, next) {
         if (idx === -1) return send(res, 404, { error: 'Not found' });
         const [removed] = list.splice(idx, 1);
         writeJsonFile(CUSTOMERS_FILE, list);
+        // also purge this customer's interaction log
+        const remaining = readInteractions().filter((a) => a.customerId !== id);
+        writeJsonFile(INTERACTIONS_FILE, remaining);
         return send(res, 200, removed);
       }
     }
