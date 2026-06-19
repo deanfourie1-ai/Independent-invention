@@ -74,7 +74,14 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
         if (!matchesSearch(job, search)) return false;
         return true;
       })
-      .sort((a, b) => (b.capturedAt || '').localeCompare(a.capturedAt || ''));
+      // Default sort: by invoice number (numeric-aware, ascending). Rows with
+      // no invoice number sort to the bottom.
+      .sort((a, b) => {
+        const an = String(a.invoiceNumber || '').trim();
+        const bn = String(b.invoiceNumber || '').trim();
+        if (!an !== !bn) return an ? -1 : 1;
+        return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+      });
   }, [jobs, fromDate, toDate, jobDate, search]);
 
   const hasFilters = fromDate || toDate || jobDate || search;

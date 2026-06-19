@@ -179,6 +179,7 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
   const assignedNext = assignedIndex >= 0 ? lines[assignedIndex + 1] || '' : '';
 
   const kvDate = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.date?.keyMatchers);
+  const kvInvoiceNumber = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.invoiceNumber?.keyMatchers);
   const kvAssigned = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.jobAssignedTo?.keyMatchers);
   const kvCustomerName = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.customerName?.keyMatchers);
   const kvCustomerAddress = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.customerAddress?.keyMatchers);
@@ -201,6 +202,10 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
       /\b([0-3]?\d[\/\-.][01]?\d[\/\-.](?:19|20)?\d{2})\b/,
       /\b((?:19|20)\d{2}-[01]\d-[0-3]\d)\b/,
     ]);
+
+  const invoiceNumber =
+    kvInvoiceNumber.value ||
+    extractLabeledValue(content, ['invoice\\s*(no\\.?|number|#)?', 'inv\\s*no', 'tax\\s*invoice']);
 
   const jobAssignedTo =
     kvAssigned.value ||
@@ -273,6 +278,11 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
       confidence: kvDate.confidence ?? confidenceForValue(date, words),
       found: Boolean(date),
     },
+    invoiceNumber: {
+      value: invoiceNumber,
+      confidence: kvInvoiceNumber.confidence ?? confidenceForValue(invoiceNumber, words),
+      found: Boolean(invoiceNumber),
+    },
     jobAssignedTo: {
       value: jobAssignedTo,
       confidence: kvAssigned.confidence ?? confidenceForValue(jobAssignedTo, words),
@@ -317,11 +327,6 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
       value: total,
       confidence: kvTotal.confidence ?? confidenceForValue(total, words),
       found: Boolean(total),
-    },
-    status: {
-      value: status,
-      confidence: kvStatus.confidence ?? confidenceForValue(status, words),
-      found: Boolean(status),
     },
   };
 

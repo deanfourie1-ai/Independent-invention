@@ -10,6 +10,16 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
     ],
     minConfidence: 0.5,
   },
+  invoiceNumber: {
+    label: 'Invoice number',
+    keyMatchers: [
+      'invoice\\s*(no\\.?|number|#)?',
+      '^inv\\b',
+      'inv\\s*no',
+      'tax\\s*invoice',
+    ],
+    minConfidence: 0.5,
+  },
   jobAssignedTo: {
     label: 'Job Assigned To',
     keyMatchers: [
@@ -95,17 +105,6 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
       'total\\s*(amount|due|cost)?',
       'grand\\s*total',
       'amount\\s*due',
-    ],
-    minConfidence: 0.5,
-  },
-  status: {
-    label: 'Status',
-    keyMatchers: [
-      'status',
-      'job\\s*completed',
-      'completed',
-      'job\\s*complete',
-      '^complete',
     ],
     minConfidence: 0.5,
   },

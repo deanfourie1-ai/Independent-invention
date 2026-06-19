@@ -444,6 +444,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const callOutFee = String(fields.callOutFee?.value || '').trim();
     const labour = String(fields.labour?.value || '').trim();
     const total = String(fields.total?.value || '').trim();
+    const invoiceNumber = String(fields.invoiceNumber?.value || '').trim();
 
     setSaving(true);
     setError('');
@@ -469,6 +470,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         tech: techId,
         jobAssignedTo: assignedTo,
         date: parsedDate,
+        invoiceNumber,
         jobDone,
         materials,
         charges: {
@@ -551,6 +553,9 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const assignedTo = String(fields.jobAssignedTo?.value || '').trim();
     if (assignedTo) patch.jobAssignedTo = assignedTo;
 
+    const invoiceNumber = String(fields.invoiceNumber?.value || '').trim();
+    if (invoiceNumber) patch.invoiceNumber = invoiceNumber;
+
     const customerName = String(fields.customerName?.value || '').trim();
     const customerAddress = String(fields.customerAddress?.value || '').trim();
     if (customerName || customerAddress) {
@@ -561,7 +566,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       };
     }
 
-    if (!patch.date && !patch.jobDone && !patch.materials && !patch.status) {
+    if (!patch.date && !patch.jobDone && !patch.materials && !patch.invoiceNumber) {
       setError('No usable fields were detected to apply to this job card.');
       return;
     }
