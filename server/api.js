@@ -165,6 +165,9 @@ async function uploadToOneDrive(cfg, buffer, fileName, mimeType) {
   return { oneDriveItemId: item.id };
 }
 
+/* ── Templates store ────────────────────────────────────── */
+const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
+
 /* ── Backup ─────────────────────────────────────────────── */
 const BACKUP_LOG_FILE = path.join(DATA_DIR, 'backup-log.json');
 
@@ -488,6 +491,54 @@ export async function handleRequest(req, res, next) {
       } catch {
         return send(res, 200, { ok: null, at: null });
       }
+    }
+
+    /* ── templates ───────────────────────────────────────── */
+    if (resource === 'templates') {
+      if (method === 'GET') {
+        try { return send(res, 200, JSON.parse(fs.readFileSync(TEMPLATES_FILE, 'utf-8'))); }
+        catch { return send(res, 200, []); }
+      }
+      if (method === 'PUT') {
+        const body = await collectBody(req);
+        if (!Array.isArray(body)) return send(res, 400, { error: 'Expected array' });
+        writeJsonFile(TEMPLATES_FILE, body);
+        return send(res, 200, body);
+      }
+    }
+
+    /* ── dashboard ───────────────────────────────────────── */
+    if (resource === 'dashboard' && method === 'GET') {
+      const jobs         = readJobs();
+      const customers    = readCustomers();
+      const interactions = readInteractions();
+      const today        = new Date().toISOString().slice(0, 10);
+
+      const pendingCapture  = jobs.filter((j) => j.status === 'printed' && !j.capturedAt).length;
+      const capturedToday   = jobs.filter((j) => (j.capturedAt || '').slice(0, 10) === today).length;
+      const totalOutstanding = customers
+        .filter((c) => !c.settled)
+        .reduce((sum, c) => sum + (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0), 0);
+
+      // interactions are newest-first; first followUpIso per customer is the active plan
+      const activePlan = {};
+      for (const a of interactions) {
+        if (a.followUpIso && !(a.customerId in activePlan)) activePlan[a.customerId] = a.followUpIso;
+      }
+      const overdueCount  = customers.filter((c) => !c.settled && activePlan[c.id] && activePlan[c.id] < today).length;
+      const needsFirst    = customers.filter((c) => !c.settled && !interactions.some((a) => a.customerId === c.id && a.did !== 'task')).length;
+      const openFollowups = customers.filter((c) => !c.settled && c.invoices?.some((i) => !i.paid)).length;
+
+      const custMap = Object.fromEntries(customers.map((c) => [c.id, c.name]));
+      const recentActivity = interactions
+        .filter((a) => a.did !== 'task')
+        .slice(0, 8)
+        .map((a) => ({ id: a.id, customerName: custMap[a.customerId] || 'Unknown', did: a.did, date: a.date, time: a.time, said: a.said, by: a.by }));
+
+      let lastBackup = null;
+      try { lastBackup = JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')); } catch {}
+
+      return send(res, 200, { pendingCapture, capturedToday, totalOutstanding, overdueCount, needsFirst, openFollowups, recentActivity, lastBackup });
     }
 
     send(res, 404, { error: 'Unknown API route' });

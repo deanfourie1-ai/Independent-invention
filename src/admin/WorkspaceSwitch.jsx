@@ -3,6 +3,7 @@ import Icon from '../components/Icon';
 /* Segmented control in the shared top bar that swaps between the two
    workspaces while keeping the same shell/brand — so it feels like one app. */
 const ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: 'layout' },
   { id: 'recapture', label: 'Recapture', icon: 'clipboard' },
   { id: 'followups', label: 'Follow-ups', icon: 'phone' },
 ];

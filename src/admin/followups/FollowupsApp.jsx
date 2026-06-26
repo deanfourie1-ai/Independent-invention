@@ -6,6 +6,8 @@ import useFollowups from '../../hooks/useFollowups';
 import {
   addInteraction, patchCustomer, addCustomer, deleteCustomer, replaceCustomers,
 } from '../../services/followups';
+import { fillTemplate, DEFAULT_TEMPLATES } from './templates';
+import { nameMatchScore } from '../../services/nameMatcher';
 
 const LOGGED_BY = 'Admin';
 const IMPORT_KEY = 'tidewell.followups.import';
@@ -256,7 +258,7 @@ function PrintDoc({ customer, entries }) {
 }
 
 /* ── customer drawer: combined history + log ── */
-function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
+function CustomerDrawer({ customer, history, onClose, onSave, onDelete, templates }) {
   const [did, setDid] = useState('call');
   const [said, setSaid] = useState('');
   const [fuOn, setFuOn] = useState(true);
@@ -265,6 +267,7 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
   const [osStr, setOsStr] = useState('');
   const [invPaid, setInvPaid] = useState({});
   const [confirmDel, setConfirmDel] = useState(false);
+  const [jobHistory, setJobHistory] = useState([]);
   const c = customer || {};
 
   useEffect(() => {
@@ -276,6 +279,18 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
       setInvPaid(paid);
       setOsStr(String(S.owed(customer)));
       setConfirmDel(false);
+      // Feature 2B: load job history for this customer
+      fetch('/api/jobs')
+        .then((r) => r.json())
+        .then((jobs) => {
+          const matches = jobs.filter(
+            (j) => j.capturedAt && nameMatchScore(j.customer?.name, customer.name) >= 0.8
+          ).slice(0, 6);
+          setJobHistory(matches);
+        })
+        .catch(() => {});
+    } else {
+      setJobHistory([]);
     }
   }, [customer]);
 
@@ -368,6 +383,24 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
                 </button>))}
             </div>
 
+            {(templates || []).length > 0 && (
+              <>
+                <div className="sl-q">Quick template <span className="opt">optional — fills the note below</span></div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  {(templates || []).map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      className="tw-btn tw-btn--sm"
+                      onClick={() => setSaid(fillTemplate(tpl.body, c, S.owed(c), S.openInvoices(c), S.oldestDays(c)))}
+                    >
+                      {tpl.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             <div className="sl-q">What was said / agreed?</div>
             <textarea className="sl-ta" value={said} onChange={(e) => setSaid(e.target.value)}
               placeholder={c.contact ? `e.g. Spoke to ${c.contact} — promised payment by Friday. Re-check next week.` : 'e.g. Spoke to them — promised payment by Friday. Re-check next week.'} />
@@ -405,6 +438,22 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
             </div>
             <div className="sl-histtitle">Interaction history</div>
             <InteractionsTable entries={history} emptyText="No interactions yet — log the first one on the left." />
+
+            {jobHistory.length > 0 && (
+              <>
+                <div className="sl-histtitle" style={{ marginTop: 14 }}>Captured job cards</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                  {jobHistory.map((j) => (
+                    <div key={j.id} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '6px 10px', background: 'var(--bg)', borderRadius: 6, alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--ink-1)', minWidth: 60 }}>{j.ref || j.id}</span>
+                      <span style={{ color: 'var(--ink-2)', flex: 1 }}>{j.date || '—'}</span>
+                      <span style={{ color: 'var(--ink-2)', fontFamily: 'monospace' }}>{j.invoiceNumber || 'No invoice'}</span>
+                      {j.charges?.total && <span style={{ color: 'var(--ink-1)' }}>R {Number(String(j.charges.total).replace(/[^\d.]/g, '')).toLocaleString('en-ZA')}</span>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -794,6 +843,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
   const [showSettings, setShowSettings] = useState(false);
   const [workDate, setWorkDate] = useState(S.TODAY_ISO);
   const [toast, setToast] = useState(null);
+  const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [importMeta, setImportMeta] = useState(() => {
     try { return JSON.parse(localStorage.getItem(IMPORT_KEY)) || DEFAULT_IMPORT; } catch { return DEFAULT_IMPORT; }
   });
@@ -808,6 +858,13 @@ export default function FollowupsApp({ workspaceSwitch }) {
   S.setToday(workDate);
 
   useEffect(() => { try { localStorage.setItem(IMPORT_KEY, JSON.stringify(importMeta)); } catch (_) {} }, [importMeta]);
+
+  useEffect(() => {
+    fetch('/api/templates')
+      .then((r) => r.json())
+      .then((saved) => { if (Array.isArray(saved) && saved.length) setTemplates(saved); })
+      .catch(() => {});
+  }, []);
 
   const custById = useMemo(() => Object.fromEntries(customers.map((c) => [c.id, c])), [customers]);
   const nameById = (id) => (custById[id] || {}).name || id;
@@ -1173,7 +1230,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
               </>}
         </div>
 
-        <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} onDelete={deleteTask} />
+        <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} onDelete={deleteTask} templates={templates} />
         <TaskModal open={showTask} customers={customers} onClose={() => setShowTask(false)} onSave={saveTask} />
         <SettingsModal open={showSettings} customers={customers} onClose={() => setShowSettings(false)}
           onSaveCustomer={saveCustomerDetails} onAddCustomer={addCustomerFromSettings} />

@@ -127,7 +127,12 @@ function Sec({ title, children }) {
   );
 }
 
-export default function DigitalJobCard({ job, onUpdate }) {
+const fmtAmt = (n) => 'R ' + Number(n || 0).toLocaleString('en-ZA');
+const owedAmt = (c) => typeof c.outstanding === 'number'
+  ? c.outstanding
+  : (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0);
+
+export default function DigitalJobCard({ job, onUpdate, followupMatch }) {
   const [copied, setCopied] = useState(null);
   const jobId = job.ref || job.id;
 
@@ -151,8 +156,20 @@ export default function DigitalJobCard({ job, onUpdate }) {
     setTimeout(() => setCopied((c) => (c === key ? null : c)), 1300);
   }
 
+  const matchOwed = followupMatch ? owedAmt(followupMatch) : 0;
+
   return (
     <div className="cap-card">
+      {followupMatch && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 14px', margin: '0 0 0 0', background: '#fff8e1', borderBottom: '1px solid #ffe082', fontSize: 13 }}>
+          <Icon name="alertCircle" size={15} style={{ color: '#f57c00', flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <b>{followupMatch.name}</b> has an open follow-up
+            {matchOwed > 0 ? ` — ${fmtAmt(matchOwed)} outstanding` : ''}
+            {' '}· visible in <em>Customer follow-ups</em>
+          </span>
+        </div>
+      )}
       <div className="cap-card-head">
         <span className="ttl">Digital job card</span>
         <span className="hint">Edit any field, then copy into Sage</span>
