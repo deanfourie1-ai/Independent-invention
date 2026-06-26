@@ -26,7 +26,13 @@ const fuRelative = (iso) => {
 const fmtR = (n) => 'R ' + Number(n || 0).toLocaleString('en-ZA');
 // owed = manual override if set, else the sum of invoices not yet marked paid
 const owed = (c) => (typeof c.outstanding === 'number' ? c.outstanding : (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0));
-const oldestDays = (c) => (c.invoices || []).reduce((m, i) => (i.paid ? m : Math.max(m, i.days)), 0);
+// Live days: prefers stored invoice date; falls back to importedDays + elapsed since importedAt; else stored snapshot.
+const invDays = (iv) => {
+  if (iv.invoiceDate) return Math.max(0, daysBetween(iv.invoiceDate, CURRENT));
+  if (typeof iv.importedDays === 'number' && iv.importedAt) return Math.max(0, iv.importedDays + daysBetween(iv.importedAt, CURRENT));
+  return iv.days || 0;
+};
+const oldestDays = (c) => (c.invoices || []).reduce((m, i) => (i.paid ? m : Math.max(m, invDays(i))), 0);
 const openInvoices = (c) => (c.invoices || []).filter((i) => !i.paid);
 const sumUnpaid = (c, paidMap) => (c.invoices || []).reduce((s, i) => s + ((paidMap && paidMap[i.no]) || i.paid ? 0 : i.amount), 0);
 
@@ -35,5 +41,5 @@ export const S = {
   get today() { return CURRENT; },
   setToday(iso) { CURRENT = iso; },
   isoToDisp, isoToDow, addDaysIso, daysBetween, fuStatus, fuRelative,
-  fmtR, owed, oldestDays, openInvoices, sumUnpaid,
+  fmtR, owed, invDays, oldestDays, openInvoices, sumUnpaid,
 };

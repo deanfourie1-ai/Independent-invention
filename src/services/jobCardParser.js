@@ -250,8 +250,7 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
     kvMaterialsOther.value ||
     extractChargeValue(content, [
       /\bmaterials?\s*\/\s*other\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
-      /\bmat\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
-      /\bdrain\s*m\s*[-:]?\s*([0-9][0-9.,]*)\b/i,
+      /\bother\s*costs?\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
     ]);
 
   const total =
