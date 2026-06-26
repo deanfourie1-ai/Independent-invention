@@ -165,6 +165,76 @@ async function uploadToOneDrive(cfg, buffer, fileName, mimeType) {
   return { oneDriveItemId: item.id };
 }
 
+/* ── Backup ─────────────────────────────────────────────── */
+const BACKUP_LOG_FILE = path.join(DATA_DIR, 'backup-log.json');
+
+const BACKUP_FILES = [
+  { name: 'jobs.json',         src: DATA_FILE },
+  { name: 'customers.json',    src: CUSTOMERS_FILE },
+  { name: 'interactions.json', src: INTERACTIONS_FILE },
+  { name: 'technicians.json',  src: TECHS_FILE },
+];
+
+function backupStamp() {
+  const n = new Date();
+  const p = (x) => String(x).padStart(2, '0');
+  return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}_${p(n.getHours())}-${p(n.getMinutes())}`;
+}
+
+async function runBackup() {
+  const stamp      = backupStamp();
+  const cfg        = readOneDriveConfig();
+  const useOneDrive = isOneDriveReady(cfg);
+  const backed     = [];
+  let   destination, folder, error;
+
+  try {
+    if (useOneDrive) {
+      destination = 'onedrive';
+      folder      = `Jobtool Backups/${stamp}`;
+      const token   = await getGraphToken(cfg);
+      const userRef = encodeURIComponent(cfg.userId);
+
+      for (const f of BACKUP_FILES) {
+        if (!fs.existsSync(f.src)) continue;
+        const buf = fs.readFileSync(f.src);
+        const url = `https://graph.microsoft.com/v1.0/users/${userRef}/drive/root:/${folder}/${f.name}:/content`;
+        const res = await fetch(url, {
+          method:  'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body:    buf,
+        });
+        if (!res.ok) { const t = await res.text(); throw new Error(`${f.name}: ${t}`); }
+        backed.push(f.name);
+      }
+    } else {
+      destination = 'local';
+      folder      = path.join('data', 'backups', stamp);
+      const backupDir = path.join(DATA_DIR, 'backups', stamp);
+      fs.mkdirSync(backupDir, { recursive: true });
+      for (const f of BACKUP_FILES) {
+        if (!fs.existsSync(f.src)) continue;
+        fs.copyFileSync(f.src, path.join(backupDir, f.name));
+        backed.push(f.name);
+      }
+    }
+
+    fs.writeFileSync(BACKUP_LOG_FILE, JSON.stringify(
+      { at: new Date().toISOString(), destination, folder, files: backed, ok: true }, null, 2
+    ));
+  } catch (err) {
+    error = err.message || 'Unknown error';
+    try {
+      fs.writeFileSync(BACKUP_LOG_FILE, JSON.stringify(
+        { at: new Date().toISOString(), destination: destination || (useOneDrive ? 'onedrive' : 'local'), files: backed, ok: false, error }, null, 2
+      ));
+    } catch (_) {}
+  }
+}
+
+// Run 8 s after startup — long enough for the server to finish initialising.
+setTimeout(() => { runBackup().catch(() => {}); }, 8000);
+
 /* ── HTTP helpers ───────────────────────────────────────── */
 function collectBody(req) {
   return new Promise((resolve, reject) => {
@@ -408,6 +478,15 @@ export async function handleRequest(req, res, next) {
         list.unshift(body); // newest first
         writeJsonFile(INTERACTIONS_FILE, list);
         return send(res, 201, body);
+      }
+    }
+
+    /* ── backup status ───────────────────────────────────── */
+    if (resource === 'backup-status' && method === 'GET') {
+      try {
+        return send(res, 200, JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')));
+      } catch {
+        return send(res, 200, { ok: null, at: null });
       }
     }
 

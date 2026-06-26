@@ -9,7 +9,7 @@ import {
 
 const LOGGED_BY = 'Admin';
 const IMPORT_KEY = 'tidewell.followups.import';
-const DEFAULT_IMPORT = { file: 'Sample data (seeded)', sheet: 'Aged debtors', date: '', time: '' };
+const DEFAULT_IMPORT = { file: 'Outstanding invoices list', sheet: 'Aged debtors', date: '', time: '' };
 const nowTime = () => new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
 
 const METHODS = [
@@ -349,7 +349,7 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
                         <input type="checkbox" checked={paid} onChange={() => toggleInv(iv.no)} />
                         <span className="no">{iv.no}</span>
                         <span className="amt">{S.fmtR(iv.amount)}</span>
-                        <span className={'days ' + (iv.days >= 90 ? 't90' : iv.days >= 60 ? 't60' : iv.days >= 30 ? 't30' : 't0')}>{iv.days}d</span>
+                        <span className={'days ' + (S.invDays(iv) >= 90 ? 't90' : S.invDays(iv) >= 60 ? 't60' : S.invDays(iv) >= 30 ? 't30' : 't0')}>{S.invDays(iv)}d</span>
                         <span className="state">{paid ? 'Paid' : 'Affected'}</span>
                       </label>);
                   })}
@@ -942,6 +942,95 @@ export default function FollowupsApp({ workspaceSwitch }) {
     flash(`Exported ${entries.length} interaction${entries.length === 1 ? '' : 's'} for ${cust.name} to CSV`);
   };
 
+  const exportOpenActionsReport = async () => {
+    const openRows = rows.filter((r) => !r.resolved);
+    if (!openRows.length) { flash('No open actions to export.'); return; }
+
+    const xlsx = await import('xlsx');
+    const today = S.isoToDisp(S.TODAY_ISO);
+
+    const aoa = [];
+    const customerRowSet = new Set();
+    let rowIdx = 0;
+
+    aoa.push(['Open follow-up actions report', '', '', '', '', '']); rowIdx++;
+    aoa.push(['Generated:', today, `${openRows.length} open task${openRows.length === 1 ? '' : 's'}`, '', S.fmtR(totalOwed) + ' total outstanding', '']); rowIdx++;
+    aoa.push([]); rowIdx++;
+
+    for (const { c, planned, plannedTime } of openRows) {
+      const entries = (histByCust[c.id] || []).filter((e) => e.did !== 'task');
+      const amtOwed = S.owed(c);
+      const contact = [c.contact, c.phone, c.email].filter((x) => x && x !== '—').join(' · ') || '—';
+      const nextFu = planned
+        ? (S.isoToDisp(planned) + (plannedTime ? ', ' + plannedTime : ''))
+        : 'Not planned';
+      const openInvs = S.openInvoices(c);
+
+      // Customer header row — bold, col A = name, cols B–G = summary
+      customerRowSet.add(rowIdx);
+      aoa.push([
+        c.name,
+        contact,
+        amtOwed > 0 ? S.fmtR(amtOwed) + ' outstanding' : 'No outstanding amount',
+        'Next follow-up: ' + nextFu,
+        openInvs.length + ' open invoice' + (openInvs.length !== 1 ? 's' : ''),
+        openInvs.length ? 'Oldest: ' + S.oldestDays(c) + 'd' : '',
+        '',
+      ]); rowIdx++;
+
+      if (!entries.length) {
+        // col A = customer name, col B = message
+        aoa.push([c.name, '(No interactions logged yet)', '', '', '', '', '']); rowIdx++;
+      } else {
+        // Sub-header: col A = customer name, cols B–G = column labels
+        aoa.push([c.name, 'Type', 'Date & time', 'Invoice', 'What was said / agreed', 'Next follow-up', 'Logged by']); rowIdx++;
+        for (const e of entries) {
+          const fuDisp = e.followUpIso
+            ? S.isoToDisp(e.followUpIso) + (e.followUpTime ? ', ' + e.followUpTime : '')
+            : '—';
+          // col A = customer name repeated for every log row → filterable in Excel
+          aoa.push([
+            c.name,
+            didLabel(e.did),
+            e.date + (e.time ? ' ' + e.time : ''),
+            e.invoice || '—',
+            e.said,
+            fuDisp,
+            e.by,
+          ]); rowIdx++;
+        }
+      }
+
+      aoa.push([]); rowIdx++; // blank separator
+    }
+
+    const ws = xlsx.utils.aoa_to_sheet(aoa);
+
+    // Bold the customer header rows
+    const wsRange = xlsx.utils.decode_range(ws['!ref'] || 'A1');
+    for (const r of customerRowSet) {
+      for (let col = wsRange.s.c; col <= wsRange.e.c; col++) {
+        const addr = xlsx.utils.encode_cell({ r, c: col });
+        if (ws[addr]) ws[addr].s = { font: { bold: true } };
+      }
+    }
+
+    ws['!cols'] = [
+      { wch: 28 },  // A: Customer name (repeated)
+      { wch: 30 },  // B: Contact / type
+      { wch: 22 },  // C: Amount / date & time
+      { wch: 18 },  // D: Next fu summary / invoice
+      { wch: 50 },  // E: Notes / next fu header
+      { wch: 22 },  // F: Invoice count / next fu
+      { wch: 16 },  // G: Oldest / logged by
+    ];
+
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, 'Open Actions');
+    xlsx.writeFile(wb, `Open follow-up actions - ${today}.xlsx`);
+    flash(`Exported ${openRows.length} customer${openRows.length === 1 ? '' : 's'} to Excel`);
+  };
+
   const printInteractions = (cust) => {
     setPrintCust(cust);
     setTimeout(() => { window.print(); }, 60);
@@ -977,19 +1066,24 @@ export default function FollowupsApp({ workspaceSwitch }) {
       const amount = parseMoney(r[map.amount]);
       if (!name || !amount) return;
       let days = 0;
+      const invDate = map.date != null ? isoFromDateCell(r[map.date]) : null;
       if (map.days != null) days = Math.max(0, Math.round(Number(String(r[map.days]).replace(/[^\d.-]/g, '')) || 0));
-      else if (map.date != null) days = daysFromCell(r[map.date]);
+      else if (invDate) days = Math.max(0, S.daysBetween(invDate, S.TODAY_ISO));
+      // Store enough info for live-recalculation of days as time passes
+      const invExtra = invDate
+        ? { invoiceDate: invDate }
+        : { importedDays: days, importedAt: S.TODAY_ISO };
       const no = (map.invoice != null ? String(r[map.invoice] ?? '').trim() : '') || ('IMP-' + (++autoInv));
       const key = norm(name);
       const existing = byName.get(key);
       if (existing) {
         if ((existing.invoices || []).some((i) => i.no === no)) { skipped++; return; }
-        existing.invoices.push({ no, amount, days });
+        existing.invoices.push({ no, amount, days, ...invExtra });
         if (typeof existing.outstanding === 'number') existing.outstanding += amount;
         existing.settled = false;
         addedInvoices++; addedValue += amount;
       } else {
-        byName.set(key, { id: 'C-IMP' + Date.now() + '-' + (++autoId), name, contact: '', phone: '', email: null, invoices: [{ no, amount, days }] });
+        byName.set(key, { id: 'C-IMP' + Date.now() + '-' + (++autoId), name, contact: '', phone: '', email: null, invoices: [{ no, amount, days, ...invExtra }] });
         addedCustomers++; addedInvoices++; addedValue += amount;
       }
     });
@@ -1051,7 +1145,10 @@ export default function FollowupsApp({ workspaceSwitch }) {
                 <FI.history />History
               </button>
             </div>
-            <button className="tw-btn tw-btn--primary sl-newtask" onClick={() => setShowTask(true)}><FI.plus />New task</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="tw-btn" onClick={exportOpenActionsReport}><FI.excel />Export report</button>
+              <button className="tw-btn tw-btn--primary sl-newtask" onClick={() => setShowTask(true)}><FI.plus />New task</button>
+            </div>
           </div>
 
           {tab === 'todo'

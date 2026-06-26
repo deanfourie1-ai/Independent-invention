@@ -195,10 +195,11 @@ export default function DigitalJobCard({ job, onUpdate }) {
         </Sec>
 
         <Sec title="Cost / breakdown">
-          <EditableRow label="Call-out fee" value={job.charges?.callOutFee} onSave={(v) => patchCharges('callOutFee', v)} copyKey="callOutFee" copied={copied} onCopy={copyField} />
-          <EditableRow label="Labour"       value={job.charges?.labour}     onSave={(v) => patchCharges('labour', v)}     copyKey="labour"     copied={copied} onCopy={copyField} />
-          <EditableRow label="Other costs"  value={job.charges?.materials}  onSave={(v) => patchCharges('materials', v)}  copyKey="otherCosts" copied={copied} onCopy={copyField} />
-          <EditableRow label="Total"        value={job.charges?.total}      onSave={(v) => patchCharges('total', v)}      copyKey="total"      copied={copied} onCopy={copyField} />
+          <EditableRow label="Call-out fee"   value={job.charges?.callOutFee}   onSave={(v) => patchCharges('callOutFee', v)}   copyKey="callOutFee"   copied={copied} onCopy={copyField} />
+          <EditableRow label="Labour"         value={job.charges?.labour}       onSave={(v) => patchCharges('labour', v)}       copyKey="labour"       copied={copied} onCopy={copyField} />
+          <EditableRow label="Material cost"  value={job.charges?.materialCost} onSave={(v) => patchCharges('materialCost', v)} copyKey="materialCost" copied={copied} onCopy={copyField} />
+          <EditableRow label="Other costs"    value={job.charges?.materialsOther} onSave={(v) => patchCharges('materialsOther', v)} copyKey="otherCosts" copied={copied} onCopy={copyField} />
+          <EditableRow label="Total"          value={job.charges?.total}        onSave={(v) => patchCharges('total', v)}        copyKey="total"        copied={copied} onCopy={copyField} />
         </Sec>
 
         <Sec title="Materials used">
