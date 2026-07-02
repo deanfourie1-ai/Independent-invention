@@ -43,7 +43,17 @@ function QueueItem({ job, rec, tasks, selected, onClick, onDelete, showChecklist
         </span>
         <div className="meta">
           <div className="nm">{job.customer.name}</div>
-          <div className="sub"><span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{job.ref}</span> · {job.jobType}</div>
+          <div className="sub">
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{job.ref}</span> · {job.jobType}
+            {job.ocrImport?.needsReview && (
+              <span
+                title={(job.ocrImport.reviewReasons || []).join('. ') || 'Auto-imported — check the fields against the scan'}
+                style={{ fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 4, padding: '0 5px', marginLeft: 6, whiteSpace: 'nowrap' }}
+              >
+                CHECK OCR
+              </span>
+            )}
+          </div>
         </div>
         {showChecklist && (
           <span className={'cap-prog' + (complete ? ' done' : '')}>

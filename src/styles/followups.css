@@ -375,6 +375,10 @@
 .sl-itable .ty .tymark.v-task{ background:#eef4ff; color:#2b5cb8; }
 .sl-itable .ty .tylab{ font-size:12.5px; font-weight:700; vertical-align:middle; }
 .sl-itable .ty .invref{ display:block; font-family:var(--mono); font-size:10.5px; font-weight:500; color:var(--ink-3); margin-top:2px; }
+/* multi-method entries: icon row on top, label wraps underneath */
+.sl-itable .ty.multi{ white-space:normal; }
+.sl-itable .ty.multi .tymark{ margin-right:4px; }
+.sl-itable .ty.multi .tylab{ display:block; white-space:normal; margin-top:5px; line-height:1.35; }
 .sl-itable .ca{ font-size:12.5px; font-weight:600; color:var(--ink-2); white-space:nowrap; font-variant-numeric:tabular-nums; }
 .sl-itable .ca .t{ display:block; font-size:11.5px; font-weight:500; color:var(--ink-3); margin-top:2px; }
 .sl-itable .no .said{ display:block; font-size:13px; color:var(--ink); line-height:1.5; text-wrap:pretty; overflow-wrap:break-word; }

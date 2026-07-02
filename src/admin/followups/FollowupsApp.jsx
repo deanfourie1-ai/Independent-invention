@@ -24,6 +24,10 @@ const METHODS = [
 const LABELS = { call: 'Called', whatsapp: 'WhatsApp', email: 'Emailed', visit: 'Visited', note: 'Note', task: 'To-do' };
 const didLabel = (m) => LABELS[m] || m;
 const didIcon = (m) => m === 'call' ? <FI.phone /> : m === 'whatsapp' ? <FI.whatsapp /> : m === 'email' ? <FI.mail /> : m === 'visit' ? <FI.pin /> : m === 'task' ? <FI.flag /> : <FI.note />;
+/* An entry may record several methods at once (dids: ['call','whatsapp',…]);
+   older entries only carry the single `did`. */
+const didsOf = (a) => (Array.isArray(a.dids) && a.dids.length ? a.dids : [a.did]);
+const didsLabel = (a) => didsOf(a).map(didLabel).join(', ');
 
 /* ── shared interactions table ── */
 function InteractionsTable({ entries, emptyText }) {
@@ -35,9 +39,9 @@ function InteractionsTable({ entries, emptyText }) {
       <tbody>
         {entries.map((a) => (
           <tr key={a.id}>
-            <td className="ty">
-              <span className={'tymark v-' + a.did}>{didIcon(a.did)}</span>
-              <span className="tylab">{didLabel(a.did)}{a.invoice && <span className="invref">{a.invoice}</span>}</span>
+            <td className={'ty' + (didsOf(a).length > 1 ? ' multi' : '')}>
+              {didsOf(a).map((d) => <span key={d} className={'tymark v-' + d}>{didIcon(d)}</span>)}
+              <span className="tylab">{didsLabel(a)}{a.invoice && <span className="invref">{a.invoice}</span>}</span>
             </td>
             <td className="ca">{a.date}<span className="t">{a.time}</span></td>
             <td className="no"><span className="said">{a.said}</span><span className="by">{a.by}</span></td>
@@ -120,7 +124,7 @@ function ActionRow({ r, onOpen }) {
               ? <span className="fu firstcontact"><FI.phone />Needs first contact</span>
               : <FuChip iso={null} />}
         {last
-          ? <span className="lastln">Last: {didLabel(last.did).toLowerCase()} {last.date}</span>
+          ? <span className="lastln">Last: {didsLabel(last).toLowerCase()} {last.date}</span>
           : plannedIsTask
             ? <span className="lastln"><FI.flag style={{ width: 11, height: 11, verticalAlign: -1, marginRight: 3 }} />Task you added</span>
             : null}
@@ -180,7 +184,7 @@ function HistoryGroups({ groups, query, onOpen }) {
                 <div className="cnt">{g.entries.length} interaction{g.entries.length > 1 ? 's' : ''}</div>
               </div>
               <div className="prev">
-                <span className={'verb v-' + last.did}>{didLabel(last.did)}</span>
+                <span className={'verb v-' + last.did}>{didsLabel(last)}</span>
                 <span className="said">{hl(last.said)}</span>
               </div>
               <div className="aside">
@@ -246,7 +250,7 @@ function PrintDoc({ customer, entries }) {
           {entries.map((a) => (
             <tr key={a.id}>
               <td className="nw">{a.date}<br />{a.time}</td>
-              <td className="nw">{didLabel(a.did)}</td>
+              <td className="nw">{didsLabel(a)}</td>
               <td className="nw">{a.invoice || '—'}</td>
               <td>{a.said}</td>
               <td className="nw">{a.followUpIso ? S.isoToDisp(a.followUpIso) + (a.followUpTime ? ' ' + a.followUpTime : '') : '—'}</td>
@@ -259,7 +263,7 @@ function PrintDoc({ customer, entries }) {
 
 /* ── customer drawer: combined history + log ── */
 function CustomerDrawer({ customer, history, onClose, onSave, onDelete, templates }) {
-  const [did, setDid] = useState('call');
+  const [dids, setDids] = useState(['call']);
   const [said, setSaid] = useState('');
   const [fuOn, setFuOn] = useState(true);
   const [fuDate, setFuDate] = useState(S.addDaysIso(S.TODAY_ISO, 7));
@@ -272,7 +276,7 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete, template
 
   useEffect(() => {
     if (customer) {
-      setDid('call'); setSaid(''); setFuOn(true);
+      setDids(['call']); setSaid(''); setFuOn(true);
       setFuDate(S.addDaysIso(S.TODAY_ISO, 7)); setFuTime('09:00');
       const paid = {};
       (customer.invoices || []).forEach((iv) => { if (iv.paid) paid[iv.no] = true; });
@@ -305,9 +309,15 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete, template
   const recalcOutstanding = () => setOsStr(String(S.sumUnpaid(c, invPaid)));
   const outstandingNum = parseMoney(osStr);
 
+  /* toggle a method on/off, keep at least one selected, keep METHODS order */
+  const toggleDid = (mid) => setDids((prev) => {
+    if (prev.includes(mid)) return prev.length > 1 ? prev.filter((x) => x !== mid) : prev;
+    return METHODS.map((m) => m.id).filter((id) => id === mid || prev.includes(id));
+  });
+
   const QUICK = [{ label: 'In 3 days', n: 3 }, { label: 'In 1 week', n: 7 }, { label: 'In 2 weeks', n: 14 }];
   const save = () => onSave({
-    did, said: said.trim(),
+    dids, said: said.trim(),
     followUpIso: fuOn ? fuDate : null, followUpTime: fuOn ? fuTime : null,
     outstanding: outstandingNum, invoicePaid: invPaid,
   });
@@ -375,10 +385,10 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete, template
               )}
             </div>
 
-            <div className="sl-q">What was done?</div>
+            <div className="sl-q">What was done? <span className="opt">tick everything that happened</span></div>
             <div className="sl-methods">
               {METHODS.map((m) => (
-                <button key={m.id} className={'sl-method' + (did === m.id ? ' on' : '')} onClick={() => setDid(m.id)}>
+                <button key={m.id} className={'sl-method' + (dids.includes(m.id) ? ' on' : '')} onClick={() => toggleDid(m.id)} aria-pressed={dids.includes(m.id)}>
                   <span className="mi"><m.icon /></span><span className="ml">{m.label}</span>
                 </button>))}
             </div>
@@ -915,13 +925,13 @@ export default function FollowupsApp({ workspaceSwitch }) {
 
   const flash = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 3000); };
 
-  const saveLog = async ({ did, said, followUpIso, followUpTime, outstanding, invoicePaid }) => {
+  const saveLog = async ({ dids, said, followUpIso, followUpTime, outstanding, invoicePaid }) => {
     const c = custById[drawerId];
     if (!c) return;
     const affected = (c.invoices || []).filter((iv) => !(invoicePaid && invoicePaid[iv.no])).map((iv) => iv.no);
     const entry = {
       id: 'L-' + Date.now(), customerId: c.id, date: S.isoToDisp(S.TODAY_ISO), time: nowTime(),
-      by: LOGGED_BY, did, invoice: affected.length === 1 ? affected[0] : null, said,
+      by: LOGGED_BY, did: dids[0], dids, invoice: affected.length === 1 ? affected[0] : null, said,
       followUpIso: followUpIso || null, followUpTime: followUpTime || null,
     };
     const clearedOut = typeof outstanding === 'number' && outstanding <= 0;
@@ -937,7 +947,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
     flash(clearedOut
       ? c.name + ' — fully paid, removed from the list'
       : followUpIso
-        ? didLabel(did) + ' ' + c.name + ' — next follow-up ' + S.isoToDisp(followUpIso)
+        ? didsLabel(entry) + ' ' + c.name + ' — next follow-up ' + S.isoToDisp(followUpIso)
         : c.name + ' marked settled — removed from the list');
   };
 
@@ -987,7 +997,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
   const exportCsv = (cust, entries) => {
     const header = ['Date', 'Time', 'Type', 'Invoice', 'What was said / agreed', 'Next follow-up', 'Logged by'];
     const esc = (s) => `"${String(s == null ? '' : s).replace(/"/g, '""')}"`;
-    const lines = entries.map((a) => [a.date, a.time, didLabel(a.did), a.invoice || '', a.said,
+    const lines = entries.map((a) => [a.date, a.time, didsLabel(a), a.invoice || '', a.said,
       a.followUpIso ? S.isoToDisp(a.followUpIso) + (a.followUpTime ? ' ' + a.followUpTime : '') : '', a.by]);
     const csv = [header, ...lines].map((r) => r.map(esc).join(',')).join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -1048,7 +1058,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
           // col A = customer name repeated for every log row → filterable in Excel
           aoa.push([
             c.name,
-            didLabel(e.did),
+            didsLabel(e),
             e.date + (e.time ? ' ' + e.time : ''),
             e.invoice || '—',
             e.said,

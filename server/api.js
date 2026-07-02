@@ -522,18 +522,45 @@ export async function handleRequest(req, res, next) {
 
       // interactions are newest-first; first followUpIso per customer is the active plan
       const activePlan = {};
+      const contacted  = new Set();
       for (const a of interactions) {
         if (a.followUpIso && !(a.customerId in activePlan)) activePlan[a.customerId] = a.followUpIso;
+        if (a.did !== 'task') contacted.add(a.customerId);
       }
       const overdueCount  = customers.filter((c) => !c.settled && activePlan[c.id] && activePlan[c.id] < today).length;
-      const needsFirst    = customers.filter((c) => !c.settled && !interactions.some((a) => a.customerId === c.id && a.did !== 'task')).length;
+      const needsFirst    = customers.filter((c) => !c.settled && !contacted.has(c.id)).length;
       const openFollowups = customers.filter((c) => !c.settled && c.invoices?.some((i) => !i.paid)).length;
 
+      /* Merged activity feed: follow-up interactions + job events (scanned in,
+         captured into Sage), newest first. Interaction ids embed their epoch
+         (`L-<ms>`); job events carry ISO timestamps. */
       const custMap = Object.fromEntries(customers.map((c) => [c.id, c.name]));
-      const recentActivity = interactions
+      const dispDate = (ms) => {
+        const d = new Date(ms);
+        return `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}`;
+      };
+      const tsOfInteraction = (a) => {
+        const ms = Number(String(a.id).split('-')[1]);
+        if (Number.isFinite(ms) && ms > 0) return ms;
+        const parsed = Date.parse(`${a.date} ${a.time || '00:00'}`);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      const feed = interactions
         .filter((a) => a.did !== 'task')
-        .slice(0, 8)
-        .map((a) => ({ id: a.id, customerName: custMap[a.customerId] || 'Unknown', did: a.did, date: a.date, time: a.time, said: a.said, by: a.by }));
+        .map((a) => ({ id: a.id, ts: tsOfInteraction(a), customerName: custMap[a.customerId] || 'Unknown', did: a.did, dids: a.dids, date: a.date, said: a.said, by: a.by }));
+      for (const j of jobs) {
+        const name = j.customer?.name || j.invoiceCustomer || 'Unknown';
+        if (j.capturedAt) {
+          const ts = Date.parse(j.capturedAt) || 0;
+          const total = j.charges?.total;
+          feed.push({ id: `${j.id}-cap`, ts, customerName: name, did: 'captured', date: dispDate(ts), said: `Job ${j.ref || ''}${total ? ` · R ${total}` : ''} captured into Sage`, by: 'Admin' });
+        }
+        if (j.ocrImport?.at) {
+          const ts = Date.parse(j.ocrImport.at) || 0;
+          feed.push({ id: `${j.id}-ocr`, ts, customerName: name, did: 'scanned', date: dispDate(ts), said: `Job card ${j.ref || ''} imported${j.ocrImport.sourceFileName ? ` from ${j.ocrImport.sourceFileName}` : ''}`, by: 'OCR' });
+        }
+      }
+      const recentActivity = feed.sort((a, b) => b.ts - a.ts).slice(0, 10);
 
       let lastBackup = null;
       try { lastBackup = JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')); } catch {}

@@ -1,10 +1,13 @@
 import { parseJobCardText } from './jobCardParser';
+import { recordOcrPages } from './ocrUsage';
 
 const API_VERSION = '2024-11-30';
 const MODEL_ID = 'prebuilt-layout';
 const MODEL_FEATURES = ['keyValuePairs'];
 const MAX_POLL_ATTEMPTS = 25;
-const POLL_INTERVAL_MS = 1200;
+/* Azure free (F0) tier allows 1 GET per second and Microsoft recommends
+   polling no faster than every 2s. */
+const POLL_INTERVAL_MS = 2000;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -158,6 +161,10 @@ export async function analyzeJobCardImage({ endpoint, apiKey, file, fieldConfig 
 
   const normalized = normalizeAnalyzeResult(analyzeResult);
   const parsed = parseJobCardText(normalized, fieldConfig);
+
+  // Count pages against the monthly free-tier allowance (500/month on F0).
+  const pagesAnalyzed = new Set(normalized.words.map((w) => w.pageNumber)).size || 1;
+  recordOcrPages(pagesAnalyzed);
 
   return {
     apiVersion: API_VERSION,
