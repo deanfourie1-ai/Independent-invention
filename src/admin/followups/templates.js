@@ -24,7 +24,23 @@ export const DEFAULT_TEMPLATES = [
     name: 'Payment confirmed',
     body: 'Spoke to {contact} — confirmed that payment of {amount} has been arranged. Following up to ensure it reflects on our side.',
   },
+  {
+    id: 'tpl-writtenoff',
+    name: 'Written off',
+    body: 'In opdrag van Steyn bevestig as afgeskryf.',
+  },
+  {
+    id: 'tpl-fullypaid',
+    name: 'Fully paid',
+    body: 'Fully paid — payment of {amount} received. Paid on {today}.',
+  },
 ];
+
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function todayDisp() {
+  const d = new Date();
+  return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
+}
 
 export function fillTemplate(body, customer, owedAmount, openInvoices, oldestDays) {
   const contact = (customer.contact && customer.contact !== '—') ? customer.contact : customer.name;
@@ -35,5 +51,6 @@ export function fillTemplate(body, customer, owedAmount, openInvoices, oldestDay
     .replace(/\{contact\}/g, contact)
     .replace(/\{amount\}/g, amount)
     .replace(/\{invoices\}/g, invoices)
-    .replace(/\{oldestDays\}/g, oldestDays + ' days');
+    .replace(/\{oldestDays\}/g, oldestDays + ' days')
+    .replace(/\{today\}/g, todayDisp());
 }

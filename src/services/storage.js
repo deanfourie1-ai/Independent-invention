@@ -68,6 +68,7 @@ export async function createJob(patch) {
     printedAt: patch.printedAt || new Date().toLocaleString(),
     updated: patch.updated || 'Imported from OCR for admin recapture',
     priority: Boolean(patch.priority),
+    capturedAt: patch.capturedAt || null,
     ocrImport: patch.ocrImport || null,
     imagePath: patch.imagePath || null,
     oneDriveItemId: patch.oneDriveItemId || null,

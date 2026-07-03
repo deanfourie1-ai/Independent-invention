@@ -4,7 +4,7 @@ import Icon from '../components/Icon';
    workspaces while keeping the same shell/brand — so it feels like one app. */
 const ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: 'layout' },
-  { id: 'recapture', label: 'Recapture', icon: 'clipboard' },
+  { id: 'recapture', label: 'Jobcards', icon: 'clipboard' },
   { id: 'followups', label: 'Follow-ups', icon: 'phone' },
 ];
 

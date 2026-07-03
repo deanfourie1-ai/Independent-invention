@@ -12,6 +12,8 @@ import DetailDrawer from './DetailDrawer';
 import useAdminJobs from '../hooks/useAdminJobs';
 import { deleteJob as deleteStoredJob, patchJob } from '../services/storage';
 import { findCustomerMatch } from '../services/nameMatcher';
+import { getStagedDocs, subscribeStagedDocs } from '../services/stagedDocs';
+import { ADMIN_TAB_HINT_KEY } from './DashboardPanel';
 
 const DEFAULT_TASKS = [
   'Open new order in Sage Online',
@@ -60,9 +62,21 @@ const DELETE_REASON_CODES = [
 
 const TABS = [
   { id: 'ocr',     icon: 'file',      label: 'OCR' },
-  { id: 'capture', icon: 'clipboard', label: 'Capture' },
+  { id: 'capture', icon: 'clipboard', label: 'Pending' },
   { id: 'history', icon: 'clock',     label: 'History' },
 ];
+
+/* The dashboard's "open the OCR tab" button leaves a one-shot hint so this
+   workspace opens on the right tab. Reading must stay side-effect free —
+   StrictMode invokes state initializers twice — so the hint is cleared in a
+   mount effect instead of here. */
+function readTabHint() {
+  try {
+    const hint = sessionStorage.getItem(ADMIN_TAB_HINT_KEY);
+    if (hint && TABS.some((t) => t.id === hint)) return hint;
+  } catch (_) {}
+  return '';
+}
 
 function Brand() {
   return (
@@ -137,7 +151,9 @@ export default function AdminApp({ workspaceSwitch }) {
   const [tasks, setTasks] = useState(loadTasks);
   const [progress, setProgress] = useState(loadProgress);
   const [view, setView] = useState('work');
-  const [tab, setTab] = useState('capture');
+  const [tab, setTab] = useState(() => readTabHint() || 'capture');
+  const [ocrDocs, setOcrDocs] = useState(getStagedDocs);
+  const ocrReviewCount = ocrDocs.filter((d) => d.status === 'ready').length;
   const [selId, setSelId] = useState(null);
   const [historyRow, setHistoryRow] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -148,6 +164,15 @@ export default function AdminApp({ workspaceSwitch }) {
   const [reopenTarget, setReopenTarget] = useState(null);
   const [reopening, setReopening] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  /* Consume the one-shot tab hint once this workspace has mounted on it. */
+  useEffect(() => {
+    try { sessionStorage.removeItem(ADMIN_TAB_HINT_KEY); } catch (_) {}
+  }, []);
+
+  /* Background OCR (dashboard) drops finished scans into the shared staged-
+     docs store — keep the OCR tab badge live while working in here. */
+  useEffect(() => subscribeStagedDocs(() => setOcrDocs(getStagedDocs())), []);
 
   useEffect(() => {
     fetch('/api/customers')
@@ -344,6 +369,9 @@ export default function AdminApp({ workspaceSwitch }) {
               {t.label}
               {t.id === 'capture' && queue.length > 0 && (
                 <span className="tw-count tw-count--alert">{queue.length}</span>
+              )}
+              {t.id === 'ocr' && ocrReviewCount > 0 && (
+                <span className="tw-count">{ocrReviewCount}</span>
               )}
             </button>
           ))}

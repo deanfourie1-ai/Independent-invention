@@ -62,13 +62,12 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
     minConfidence: 0.5,
   },
   materialsUsed: {
-    label: 'Material cost',
+    label: 'Material used',
     keyMatchers: [
       'materials?\\s*used',
-      '^material$',
+      '^materials?$',
       'tools?\\s*used',
       'tool\\s*used',
-      '^mat',
     ],
     minConfidence: 0.5,
   },
@@ -89,11 +88,13 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
     minConfidence: 0.5,
   },
   materialsOther: {
-    label: 'Other costs',
+    label: 'Material & other costs',
     keyMatchers: [
       'materials?\\s*\\/\\s*other',
+      'materials?\\s*&\\s*other',
       'other\\s*costs?',
       '^other$',
+      '^m[ao]u?t\\b',
     ],
     minConfidence: 0.5,
   },
@@ -130,6 +131,9 @@ function normalizeConfig(input) {
     base[key] = {
       ...base[key],
       ...source,
+      // Labels are not user-editable in Settings — always use the app defaults
+      // so renames take effect even when a saved mapping exists.
+      label: base[key].label,
       keyMatchers: patterns.length ? patterns : base[key].keyMatchers,
       minConfidence: Number.isFinite(source.minConfidence)
         ? source.minConfidence

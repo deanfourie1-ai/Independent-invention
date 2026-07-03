@@ -251,6 +251,8 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
     extractChargeValue(content, [
       /\bmaterials?\s*\/\s*other\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
       /\bother\s*costs?\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
+      // Handwritten "Mat - 150.00"; Azure often misreads it as "Mout"/"Maut".
+      /\bm[ao]u?t\.?\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
     ]);
 
   const total =

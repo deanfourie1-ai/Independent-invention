@@ -2,7 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Icon from '../components/Icon';
 import { enqueueOcrFiles, getOcrQueue, subscribeOcrQueue, clearFinishedOcr } from '../services/ocrQueue';
 import { getOcrUsage, subscribeOcrUsage, FREE_TIER_PAGES, WARN_AT_PAGES } from '../services/ocrUsage';
+import { getStagedDocs, subscribeStagedDocs } from '../services/stagedDocs';
 import { subscribeJobsChanged } from '../services/storage';
+
+/* One-shot hint read by AdminApp so "open OCR tab" lands on the right tab. */
+export const ADMIN_TAB_HINT_KEY = 'tidewell.admin.openTab';
 
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function fmtDate(iso) {
@@ -62,11 +66,11 @@ const QSTATUS = {
 function QueueItemRow({ item }) {
   const st = QSTATUS[item.status] || QSTATUS.queued;
   const note = item.status === 'queued' ? 'Waiting…'
-    : item.status === 'processing' ? 'Reading the scan…'
+    : item.status === 'processing' ? (item.note || 'Reading the scan…')
     : item.status === 'done'
-      ? `Added to capture queue as ${item.jobRef}${item.needsReview ? ' — flagged: check fields' : ''}`
+      ? 'Scanned — waiting for you in the OCR tab'
       : item.error;
-  const msgClass = item.status === 'error' ? ' err' : item.status === 'done' && item.needsReview ? ' warn' : '';
+  const msgClass = item.status === 'error' ? ' err' : '';
   return (
     <div className="db-qrow">
       <span className={`st s-${item.status}`}><Icon name={st.icon} size={15} className={st.spin ? 'spin' : ''} /></span>
@@ -78,22 +82,30 @@ function QueueItemRow({ item }) {
 
 /* Drop zone + live progress for background OCR. Files queue up and keep
    processing while the user moves to other workspaces. */
-function OcrScanCard() {
+function OcrScanCard({ onNavigate }) {
   const [queue, setQueue] = useState(getOcrQueue);
   const [usage, setUsage] = useState(getOcrUsage);
+  const [staged, setStaged] = useState(getStagedDocs);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
     const offQueue = subscribeOcrQueue(() => setQueue(getOcrQueue()));
     const offUsage = subscribeOcrUsage(() => setUsage(getOcrUsage()));
-    return () => { offQueue(); offUsage(); };
+    const offStaged = subscribeStagedDocs(() => setStaged(getStagedDocs()));
+    return () => { offQueue(); offUsage(); offStaged(); };
   }, []);
 
   const finished = queue.filter((i) => i.status === 'done' || i.status === 'error');
   const active = queue.length - finished.length;
   const nearLimit = usage.pages >= WARN_AT_PAGES;
   const usedPct = Math.min(100, Math.round((usage.pages / FREE_TIER_PAGES) * 100));
+  const reviewCount = staged.filter((d) => d.status === 'ready').length;
+
+  function openOcrTab() {
+    try { sessionStorage.setItem(ADMIN_TAB_HINT_KEY, 'ocr'); } catch (_) {}
+    onNavigate?.('recapture');
+  }
 
   return (
     <div className="db-card">
@@ -133,6 +145,17 @@ function OcrScanCard() {
             )}
           </div>
         </div>
+      )}
+      {reviewCount > 0 && (
+        <button
+          type="button"
+          className="tw-btn"
+          style={{ width: '100%', justifyContent: 'center', marginTop: 10 }}
+          onClick={openOcrTab}
+        >
+          <Icon name="checkCircle" size={15} />
+          {reviewCount} scan{reviewCount !== 1 ? 's' : ''} ready to review — open the OCR tab
+        </button>
       )}
     </div>
   );
@@ -245,7 +268,7 @@ export default function DashboardPanel({ workspaceSwitch, onNavigate }) {
               {/* wide screens: scan + actions left, activity right */}
               <div className="db-cols">
                 <div className="db-col">
-                  <OcrScanCard />
+                  <OcrScanCard onNavigate={onNavigate} />
                   <div className="db-actions">
                     <button className="tw-btn" onClick={() => onNavigate('recapture')}>
                       <Icon name="clipboard" size={15} /> Go to capture queue {data.pendingCapture > 0 && `(${data.pendingCapture})`}
@@ -283,7 +306,7 @@ export default function DashboardPanel({ workspaceSwitch, onNavigate }) {
             </>
           ) : (
             <>
-              <OcrScanCard />
+              <OcrScanCard onNavigate={onNavigate} />
               <div className="tw-empty">Could not load dashboard data. Check the server connection.</div>
             </>
           )}

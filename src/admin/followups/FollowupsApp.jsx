@@ -117,7 +117,7 @@ function ActionRow({ r, onOpen }) {
       </div>
       <div className="next">
         {resolved
-          ? <span className="fu paidchip"><FI.checkc />Fully paid</span>
+          ? <span className="fu paidchip"><FI.checkc />Fully paid{c.settledAt ? ' · ' + S.isoToDisp(c.settledAt) : ''}</span>
           : planned
             ? <FuChip iso={planned} time={plannedTime} />
             : neverContacted
@@ -179,7 +179,7 @@ function HistoryGroups({ groups, query, onOpen }) {
               <div className="who">
                 <div className="nmrow">
                   <div className="nm">{hl(g.name)}</div>
-                  {g.settled && <span className="sl-paidflag"><FI.checkc />Fully paid</span>}
+                  {g.settled && <span className="sl-paidflag"><FI.checkc />Fully paid{g.settledAt ? ' · ' + S.isoToDisp(g.settledAt) : ''}</span>}
                 </div>
                 <div className="cnt">{g.entries.length} interaction{g.entries.length > 1 ? 's' : ''}</div>
               </div>
@@ -908,7 +908,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
     const m = new Map();
     for (const a of interactions) {
       if (a.did === 'task') continue;
-      if (!m.has(a.customerId)) m.set(a.customerId, { id: a.customerId, name: nameById(a.customerId), settled: !!custById[a.customerId]?.settled, entries: [] });
+      if (!m.has(a.customerId)) m.set(a.customerId, { id: a.customerId, name: nameById(a.customerId), settled: !!custById[a.customerId]?.settled, settledAt: custById[a.customerId]?.settledAt || null, entries: [] });
       m.get(a.customerId).entries.push(a);
     }
     return [...m.values()];
@@ -943,6 +943,9 @@ export default function FollowupsApp({ workspaceSwitch }) {
       invoices: newInvoices,
       outstanding: typeof outstanding === 'number' ? outstanding : c.outstanding,
       settled,
+      // Date the account was settled — kept from the first time it settled,
+      // cleared again if the customer is reopened.
+      settledAt: settled ? (c.settledAt || S.TODAY_ISO) : null,
     });
     flash(clearedOut
       ? c.name + ' — fully paid, removed from the list'
@@ -982,7 +985,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
       });
     } else {
       cname = (custById[cid] || {}).name || 'customer';
-      if (custById[cid]?.settled) await patchCustomer(cid, { settled: false });
+      if (custById[cid]?.settled) await patchCustomer(cid, { settled: false, settledAt: null });
     }
     await addInteraction({
       id: 'L-' + Date.now(), customerId: cid, date: S.isoToDisp(S.TODAY_ISO), time: nowTime(),

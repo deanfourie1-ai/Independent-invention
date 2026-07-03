@@ -9,6 +9,14 @@ const MAX_POLL_ATTEMPTS = 25;
    polling no faster than every 2s. */
 const POLL_INTERVAL_MS = 2000;
 
+/* Rate limiting for the F0 tier. Azure rejects bursts of analyze calls with
+   "exceeded call rate limit ... retry after 20 seconds", so submissions are
+   spaced apart and throttle responses are waited out rather than surfaced. */
+const MIN_SUBMIT_GAP_MS = 3000;
+const MAX_THROTTLE_RETRIES = 8;
+const DEFAULT_THROTTLE_WAIT_MS = 20000;
+const THROTTLE_WAIT_BUFFER_MS = 2000;
+
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -86,13 +94,32 @@ function buildAnalyzeUrl(endpoint) {
   return `${normalizeEndpoint(endpoint)}/documentintelligence/documentModels/${MODEL_ID}:analyze?${params.toString()}`;
 }
 
-async function extractError(res) {
+/* Builds an Error carrying the HTTP status and, for throttle responses, how
+   long Azure asked us to wait (Retry-After header or "retry after N seconds"
+   in the message body). */
+async function buildResponseError(res) {
+  let message = `Request failed (${res.status})`;
   try {
     const body = await res.json();
-    return body?.error?.message || body?.message || `Request failed (${res.status})`;
-  } catch (_) {
-    return `Request failed (${res.status})`;
-  }
+    message = body?.error?.message || body?.message || message;
+  } catch (_) { /* keep the fallback message */ }
+  const err = new Error(message);
+  err.status = res.status;
+  const headerSeconds = Number(res.headers.get('retry-after'));
+  const messageSeconds = /retry after (\d+) second/i.exec(message);
+  const seconds = Number.isFinite(headerSeconds) && headerSeconds > 0
+    ? headerSeconds
+    : messageSeconds ? Number(messageSeconds[1]) : 0;
+  if (seconds > 0) err.retryAfterMs = seconds * 1000;
+  return err;
+}
+
+export function isThrottleError(err) {
+  return err?.status === 429 || /rate limit|too many requests|throttl|429/i.test(err?.message || '');
+}
+
+function throttleWaitMs(err) {
+  return (err?.retryAfterMs || DEFAULT_THROTTLE_WAIT_MS) + THROTTLE_WAIT_BUFFER_MS;
 }
 
 async function pollAnalyzeResult(operationLocation, apiKey) {
@@ -105,7 +132,13 @@ async function pollAnalyzeResult(operationLocation, apiKey) {
     });
 
     if (!pollResponse.ok) {
-      throw new Error(await extractError(pollResponse));
+      const err = await buildResponseError(pollResponse);
+      // A throttled poll doesn't mean the analysis failed — wait it out.
+      if (isThrottleError(err)) {
+        await wait(throttleWaitMs(err));
+        continue;
+      }
+      throw err;
     }
 
     const payload = await pollResponse.json();
@@ -146,7 +179,7 @@ export async function analyzeJobCardImage({ endpoint, apiKey, file, fieldConfig 
   });
 
   if (!startResponse.ok && startResponse.status !== 202) {
-    throw new Error(await extractError(startResponse));
+    throw await buildResponseError(startResponse);
   }
 
   const operationLocation = startResponse.headers.get('operation-location');
@@ -173,4 +206,31 @@ export async function analyzeJobCardImage({ endpoint, apiKey, file, fieldConfig 
     ...normalized,
     parsed,
   };
+}
+
+/* Shared across every caller (dashboard queue + OCR tab) so concurrent
+   submissions still respect the global gap between analyze POSTs. */
+let lastSubmitAt = 0;
+
+/* Rate-limit-safe wrapper around analyzeJobCardImage: spaces submissions
+   MIN_SUBMIT_GAP_MS apart and, when Azure throttles (F0 "call rate limit"),
+   waits the requested time and retries instead of failing. `onWait(ms,
+   attempt)` lets the UI show that the document is waiting, not stuck. */
+export async function analyzeJobCardImageQueued({ endpoint, apiKey, file, fieldConfig, onWait }) {
+  for (let attempt = 0; ; attempt += 1) {
+    const gap = lastSubmitAt + MIN_SUBMIT_GAP_MS - Date.now();
+    if (gap > 0) await wait(gap);
+    lastSubmitAt = Date.now();
+    try {
+      return await analyzeJobCardImage({ endpoint, apiKey, file, fieldConfig });
+    } catch (err) {
+      if (isThrottleError(err) && attempt < MAX_THROTTLE_RETRIES) {
+        const delay = throttleWaitMs(err);
+        try { onWait?.(delay, attempt + 1); } catch (_) { /* UI callback must not kill the retry */ }
+        await wait(delay);
+        continue;
+      }
+      throw err;
+    }
+  }
 }

@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
-import { analyzeJobCardImage } from '../services/documentIntelligence';
-import { createJob, patchJob, uploadImage } from '../services/storage';
+import { analyzeJobCardImageQueued } from '../services/documentIntelligence';
+import { createJob, uploadImage } from '../services/storage';
 import { loadOcrFieldConfig } from '../services/ocrFieldConfig';
 import { matchTechnicians } from '../services/techMatcher';
+import {
+  getStagedDocs,
+  subscribeStagedDocs,
+  addStagedDocs,
+  updateStagedDoc,
+  removeStagedDoc as removeStagedDocFromStore,
+} from '../services/stagedDocs';
 
 const ENDPOINT_KEY = 'tidewell.ocr.endpoint';
 const API_KEY_KEY = 'tidewell.ocr.key';
-const STAGED_DOCS_KEY = 'tidewell.ocr.stagedDocs.v1';
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
 function readLocal(key) {
@@ -43,33 +49,6 @@ function dataUrlToBlob(dataUrl) {
     bytes[i] = binary.charCodeAt(i);
   }
   return new Blob([bytes], { type: mime });
-}
-
-function loadStagedDocs() {
-  try {
-    const raw = localStorage.getItem(STAGED_DOCS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.filter((item) => item && typeof item === 'object').map((item) => ({
-      id: item.id || makeId(),
-      fileName: String(item.fileName || 'Scanned document'),
-      mimeType: String(item.mimeType || 'application/octet-stream'),
-      size: Number(item.size) || 0,
-      dataUrl: String(item.dataUrl || ''),
-      status: ['staged', 'processing', 'ready', 'error', 'imported'].includes(item.status)
-        ? item.status
-        : 'staged',
-      error: String(item.error || ''),
-      createdAt: item.createdAt || new Date().toISOString(),
-      updatedAt: item.updatedAt || new Date().toISOString(),
-      result: item.result || null,
-      editedValues: item.editedValues && typeof item.editedValues === 'object' ? item.editedValues : {},
-      importedJobRef: String(item.importedJobRef || ''),
-    }));
-  } catch (_) {
-    return [];
-  }
 }
 
 function pct(value) {
@@ -172,7 +151,7 @@ function StagedPreview({ doc }) {
 }
 
 export default function OcrExtractionPanel({ job, onCreated }) {
-  const [stagedDocs, setStagedDocs] = useState(loadStagedDocs);
+  const [stagedDocs, setStagedDocs] = useState(getStagedDocs);
   const [selectedDocId, setSelectedDocId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -181,11 +160,9 @@ export default function OcrExtractionPanel({ job, onCreated }) {
   const [isReviewFullscreen, setIsReviewFullscreen] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STAGED_DOCS_KEY, JSON.stringify(stagedDocs));
-    } catch (_) {}
-  }, [stagedDocs]);
+  /* The staged-docs store is shared with the dashboard's background OCR
+     queue — docs it finishes appear here as 'ready' while this tab is open. */
+  useEffect(() => subscribeStagedDocs(() => setStagedDocs(getStagedDocs())), []);
 
   const selectedDoc = useMemo(
     () => stagedDocs.find((item) => item.id === selectedDocId) || null,
@@ -241,17 +218,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
   const readyCount = stagedDocs.filter((item) => item.status === 'ready').length;
 
   function updateDoc(docId, patch) {
-    setStagedDocs((current) =>
-      current.map((item) =>
-        item.id === docId
-          ? {
-              ...item,
-              ...patch,
-              updatedAt: new Date().toISOString(),
-            }
-          : item
-      )
-    );
+    updateStagedDoc(docId, patch);
   }
 
   function setFieldValue(fieldKey, value) {
@@ -290,7 +257,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       });
     }
 
-    setStagedDocs((current) => [...prepared, ...current]);
+    addStagedDocs(prepared);
     setSelectedDocId(prepared[0]?.id || null);
     setSaveMessage(`Staged ${prepared.length} document${prepared.length === 1 ? '' : 's'} for OCR.`);
     setFileInputKey((value) => value + 1);
@@ -331,7 +298,15 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         const blob = dataUrlToBlob(item.dataUrl);
         const file = new File([blob], item.fileName, { type: item.mimeType });
         const fieldConfig = loadOcrFieldConfig();
-        const data = await analyzeJobCardImage({ endpoint, apiKey, file, fieldConfig });
+        const data = await analyzeJobCardImageQueued({
+          endpoint,
+          apiKey,
+          file,
+          fieldConfig,
+          onWait: (delayMs) => setSaveMessage(
+            `Azure rate limit reached — ${item.fileName} retries automatically in ${Math.ceil(delayMs / 1000)}s. Nothing is lost.`
+          ),
+        });
         const nextEditedValues = Object.fromEntries(
           Object.entries(data?.parsed?.fields || {}).map(([key, field]) => [key, field.value || ''])
         );
@@ -364,7 +339,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
   }
 
   function removeStagedDoc(docId) {
-    setStagedDocs((current) => current.filter((item) => item.id !== docId));
+    removeStagedDocFromStore(docId);
     if (selectedDocId === docId) {
       setSelectedDocId(null);
       setIsReviewFullscreen(false);
@@ -408,7 +383,11 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     return candidate || 'OCR Imported Customer';
   }
 
-  async function createCaptureRecord() {
+  /* Saves the reviewed OCR document as a job record. With finishToHistory
+     it is stamped capturedAt immediately, so it skips the capture queue and
+     lands straight in History; otherwise it joins the recapture checklist
+     queue as before. */
+  async function saveOcrRecord({ finishToHistory = false } = {}) {
     if (!selectedDoc || !resolvedFields) {
       setError('Select a ready OCR document first.');
       return;
@@ -422,10 +401,25 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       const rawDate = String(fields.date?.value || '').trim();
       setError(
         rawDate
-          ? `The job date "${rawDate}" could not be read as a valid date. Please correct it (e.g. 08/06/2026) before creating the capture record.`
-          : 'A job date is required. Please enter a valid date before creating the capture record.'
+          ? `The job date "${rawDate}" could not be read as a valid date. Please correct it (e.g. 08/06/2026) before saving this record.`
+          : 'A job date is required. Please enter a valid date before saving this record.'
       );
       return;
+    }
+
+    /* Finishing straight to history skips the capture checklist, so the
+       fields that checklist would normally guarantee must be present now. */
+    if (finishToHistory) {
+      const missing = [];
+      if (!String(fields.invoiceNumber?.value || '').trim()) missing.push('invoice number');
+      if (!String(fields.total?.value || '').trim()) missing.push('total');
+      if (missing.length) {
+        setError(
+          `Cannot finish to history — missing ${missing.join(' and ')}. ` +
+          'Fill in the field(s) above, or use "Order pending" to send the card to the capture queue instead.'
+        );
+        return;
+      }
     }
 
     const parsedStatus = normalizeStatus(fields.status?.value) || 'printed';
@@ -440,7 +434,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const customerName = String(fields.customerName?.value || '').trim();
     const customerAddress = String(fields.customerAddress?.value || '').trim();
     const jobDone = String(fields.workDescription?.value || '').trim();
-    const materialCost = String(fields.materialsUsed?.value || '').trim();
+    const materialsUsed = String(fields.materialsUsed?.value || '').trim();
     const callOutFee = String(fields.callOutFee?.value || '').trim();
     const labour = String(fields.labour?.value || '').trim();
     const materialsOtherCost = String(fields.materialsOther?.value || '').trim();
@@ -473,10 +467,10 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         date: parsedDate,
         invoiceNumber,
         jobDone,
+        materials: materialsUsed,
         charges: {
           callOutFee,
           labour,
-          materialCost,
           materialsOther: materialsOtherCost,
           total,
         },
@@ -485,10 +479,13 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           address: customerAddress || 'Address pending admin capture',
           phone: '—',
         },
-        jobType: 'OCR import - admin capture required',
+        jobType: finishToHistory ? 'OCR import - finished' : 'OCR import - admin capture required',
         printedBy: 'OCR import',
         printedAt: new Date().toLocaleString(),
-        updated: 'Imported from OCR - awaiting admin recapture',
+        updated: finishToHistory
+          ? 'Imported from OCR - finished straight to history'
+          : 'Imported from OCR - awaiting admin recapture',
+        ...(finishToHistory ? { capturedAt: new Date().toISOString() } : {}),
         imagePath,
         oneDriveItemId,
         scanMimeType: selectedDoc.mimeType || '',
@@ -501,88 +498,16 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         },
       });
 
-      setSaveMessage(`Created capture record ${created.ref}. It is now in the recapture checklist queue.`);
+      setSaveMessage(
+        finishToHistory
+          ? `Finished ${created.ref} straight to history — no capture step needed.`
+          : `Created capture record ${created.ref}. It is now in the recapture checklist queue.`
+      );
       removeStagedDoc(selectedDoc.id);
       setIsReviewFullscreen(false);
       onCreated?.(created);
     } catch (err) {
       setError(err?.message || 'Failed to create capture record from OCR data.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function applyToCurrentJob() {
-    if (!job || !selectedDoc || !resolvedFields) {
-      setError('No OCR result is available to apply.');
-      return;
-    }
-
-    const fields = resolvedFields;
-    const patch = {
-      ocrImport: {
-        at: new Date().toISOString(),
-        sourceFileName: selectedDoc.fileName || '',
-        averageWordConfidence: result.averageWordConfidence,
-        extractedFields: fields,
-      },
-    };
-
-    const parsedDate = normalizeDate(fields.date?.value);
-    if (parsedDate) patch.date = parsedDate;
-
-    const description = String(fields.workDescription?.value || '').trim();
-    if (description) patch.jobDone = description;
-
-    const parsedStatus = normalizeStatus(fields.status?.value);
-    if (parsedStatus) patch.status = parsedStatus;
-
-    const callOutFee = String(fields.callOutFee?.value || '').trim();
-    const labour = String(fields.labour?.value || '').trim();
-    const materialCost = String(fields.materialsUsed?.value || '').trim();
-    const materialsOtherCost = String(fields.materialsOther?.value || '').trim();
-    const total = String(fields.total?.value || '').trim();
-    if (callOutFee || labour || materialCost || materialsOtherCost || total) {
-      patch.charges = {
-        ...(job.charges || {}),
-        ...(callOutFee ? { callOutFee } : {}),
-        ...(labour ? { labour } : {}),
-        ...(materialCost ? { materialCost } : {}),
-        ...(materialsOtherCost ? { materialsOther: materialsOtherCost } : {}),
-        ...(total ? { total } : {}),
-      };
-    }
-
-    const assignedTo = String(fields.jobAssignedTo?.value || '').trim();
-    if (assignedTo) patch.jobAssignedTo = assignedTo;
-
-    const invoiceNumber = String(fields.invoiceNumber?.value || '').trim();
-    if (invoiceNumber) patch.invoiceNumber = invoiceNumber;
-
-    const customerName = String(fields.customerName?.value || '').trim();
-    const customerAddress = String(fields.customerAddress?.value || '').trim();
-    if (customerName || customerAddress) {
-      patch.customer = {
-        ...(job.customer || {}),
-        ...(customerName ? { name: customerName } : {}),
-        ...(customerAddress ? { address: customerAddress } : {}),
-      };
-    }
-
-    if (!patch.date && !patch.jobDone && !patch.charges && !patch.invoiceNumber) {
-      setError('No usable fields were detected to apply to this job card.');
-      return;
-    }
-
-    setSaving(true);
-    setError('');
-    setSaveMessage('');
-
-    try {
-      await patchJob(job.id, patch, 'ocr_import');
-      setSaveMessage('OCR data saved to this job card. The layout now reflects extracted fields.');
-    } catch (err) {
-      setError(err?.message || 'Failed to save OCR data to this job card.');
     } finally {
       setSaving(false);
     }
@@ -870,7 +795,11 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                       </div>
                     )}
                     <div className="ocr-upload-row" style={{ marginBottom: 8 }}>
-                      <button className="btn btn-primary" disabled={saving} onClick={createCaptureRecord}>
+                      <button
+                        className="btn btn-primary"
+                        disabled={saving}
+                        onClick={() => saveOcrRecord({ finishToHistory: true })}
+                      >
                         {saving ? (
                           <>
                             <Icon name="sync" size={16} className="spin" />
@@ -878,14 +807,18 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                           </>
                         ) : (
                           <>
-                            <Icon name="plus" size={16} />
-                            <span>Create capture record from OCR</span>
+                            <Icon name="checkCircle" size={16} />
+                            <span>Finish file to history</span>
                           </>
                         )}
                       </button>
-                      <button className="btn btn-ghost" disabled={saving} onClick={applyToCurrentJob}>
-                        <Icon name="checkCircle" size={16} />
-                        <span>Apply to selected card</span>
+                      <button
+                        className="btn btn-ghost"
+                        disabled={saving}
+                        onClick={() => saveOcrRecord({ finishToHistory: false })}
+                      >
+                        <Icon name="plus" size={16} />
+                        <span>Order pending</span>
                       </button>
                     </div>
                     <div className="ocr-raw-table">

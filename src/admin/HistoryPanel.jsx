@@ -62,6 +62,7 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [sortDir, setSortDir] = useState('desc');
 
   const filtered = useMemo(() => {
     return jobs
@@ -74,15 +75,17 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
         if (!matchesSearch(job, search)) return false;
         return true;
       })
-      // Default sort: by invoice number (numeric-aware, ascending). Rows with
-      // no invoice number sort to the bottom.
+      // Sort by invoice number (numeric-aware, direction toggled via the
+      // Invoice # header; default descending). Rows with no invoice number
+      // always sort to the bottom.
       .sort((a, b) => {
         const an = String(a.invoiceNumber || '').trim();
         const bn = String(b.invoiceNumber || '').trim();
         if (!an !== !bn) return an ? -1 : 1;
-        return an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+        const cmp = an.localeCompare(bn, undefined, { numeric: true, sensitivity: 'base' });
+        return sortDir === 'desc' ? -cmp : cmp;
       });
-  }, [jobs, fromDate, toDate, jobDate, search]);
+  }, [jobs, fromDate, toDate, jobDate, search, sortDir]);
 
   const hasFilters = fromDate || toDate || jobDate || search;
   const hasAnyHistory = jobs.some((j) => j.capturedAt);
@@ -110,7 +113,8 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
         'Assigned to': technicians[job.tech]?.name || job.jobAssignedTo || '',
         'Call-out fee': job.charges?.callOutFee || '',
         'Labour': job.charges?.labour || '',
-        'Materials': job.charges?.materials || '',
+        'Material & other costs': job.charges?.materialsOther || '',
+        'Materials used': job.materials || '',
       }));
       const wb = xlsx.utils.book_new();
       const ws = xlsx.utils.json_to_sheet(rows);
@@ -193,7 +197,22 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
                   <th>Captured</th>
                   <th>Job date</th>
                   <th>Customer</th>
-                  <th>Invoice #</th>
+                  <th
+                    role="button"
+                    tabIndex={0}
+                    title={`Sorted ${sortDir === 'desc' ? 'descending' : 'ascending'} — click to reverse`}
+                    aria-sort={sortDir === 'desc' ? 'descending' : 'ascending'}
+                    style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
+                    onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+                      }
+                    }}
+                  >
+                    Invoice # {sortDir === 'desc' ? '▼' : '▲'}
+                  </th>
                   <th>Assigned to</th>
                   <th>Total</th>
                   <th>Status</th>
