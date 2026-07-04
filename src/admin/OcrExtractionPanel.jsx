@@ -4,6 +4,7 @@ import { analyzeJobCardImage } from '../services/documentIntelligence';
 import { createJob, patchJob, uploadImage } from '../services/storage';
 import { loadOcrFieldConfig } from '../services/ocrFieldConfig';
 import { matchTechnicians } from '../services/techMatcher';
+import { buildOcrSnapshot } from '../services/ocrAccuracy';
 
 const ENDPOINT_KEY = 'tidewell.ocr.endpoint';
 const API_KEY_KEY = 'tidewell.ocr.key';
@@ -498,6 +499,9 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           averageWordConfidence: result.averageWordConfidence,
           extractedFields: fields,
           extractedStatus: parsedStatus,
+          // Raw OCR values before any admin edits — the accuracy report
+          // compares these against the job's final values.
+          snapshot: buildOcrSnapshot(parsedFields),
         },
       });
 
@@ -525,6 +529,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         sourceFileName: selectedDoc.fileName || '',
         averageWordConfidence: result.averageWordConfidence,
         extractedFields: fields,
+        snapshot: buildOcrSnapshot(parsedFields),
       },
     };
 
