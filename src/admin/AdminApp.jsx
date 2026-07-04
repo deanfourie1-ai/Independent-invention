@@ -11,6 +11,7 @@ import HistoryPanel from './HistoryPanel';
 import DetailDrawer from './DetailDrawer';
 import useAdminJobs from '../hooks/useAdminJobs';
 import { deleteJob as deleteStoredJob, patchJob } from '../services/storage';
+import { findCustomerMatch } from '../services/nameMatcher';
 
 const DEFAULT_TASKS = [
   'Open new order in Sage Online',
@@ -132,6 +133,7 @@ export default function AdminApp({ workspaceSwitch }) {
   const todayStr = new Date().toISOString().slice(0, 10);
   const capturedToday = finished.filter((j) => (j.capturedAt || '').slice(0, 10) === todayStr).length;
 
+  const [followupCustomers, setFollowupCustomers] = useState([]);
   const [tasks, setTasks] = useState(loadTasks);
   const [progress, setProgress] = useState(loadProgress);
   const [view, setView] = useState('work');
@@ -146,6 +148,13 @@ export default function AdminApp({ workspaceSwitch }) {
   const [reopenTarget, setReopenTarget] = useState(null);
   const [reopening, setReopening] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/customers')
+      .then((r) => r.json())
+      .then((list) => { if (Array.isArray(list)) setFollowupCustomers(list.filter((c) => !c.settled)); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch (_) {}
@@ -377,6 +386,7 @@ export default function AdminApp({ workspaceSwitch }) {
                   <DigitalJobCard
                     job={job}
                     onUpdate={(patch) => patchJob(job.id, patch).catch(() => {})}
+                    followupMatch={findCustomerMatch(job.customer?.name, followupCustomers)}
                   />
                 )}
               </div>

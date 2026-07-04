@@ -62,7 +62,7 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
     minConfidence: 0.5,
   },
   materialsUsed: {
-    label: 'Materials Used',
+    label: 'Material cost',
     keyMatchers: [
       'materials?\\s*used',
       '^material$',
@@ -92,9 +92,8 @@ export const DEFAULT_OCR_FIELD_CONFIG = {
     label: 'Other costs',
     keyMatchers: [
       'materials?\\s*\\/\\s*other',
-      '^mat$',
-      'materials?',
-      'other',
+      'other\\s*costs?',
+      '^other$',
     ],
     minConfidence: 0.5,
   },

@@ -23,6 +23,14 @@ function writeLS(key, val) {
   try { localStorage.setItem(key, val || ''); } catch {}
 }
 
+function fmtBackupDate(iso) {
+  if (!iso) return '';
+  const d   = new Date(iso);
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const p   = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function fmtBytes(bytes) {
   if (bytes == null) return null;
   const gb = bytes / (1024 ** 3);
@@ -80,6 +88,9 @@ export default function SettingsPanel({ onBack }) {
   const [fieldConfig, setFieldConfig]       = useState(() => loadOcrFieldConfig());
   const [fieldSaveOk, setFieldSaveOk]       = useState(false);
 
+  /* ── Backup status state ── */
+  const [backupStatus, setBackupStatus] = useState(null);
+
   /* ── Technicians state ── */
   const [techs, setTechs]             = useState([]);
   const [techsLoading, setTechsLoading] = useState(true);
@@ -87,6 +98,14 @@ export default function SettingsPanel({ onBack }) {
   const [techSaving, setTechSaving]   = useState(false);
   const [techSaveOk, setTechSaveOk]   = useState(false);
   const [techSaveErr, setTechSaveErr] = useState('');
+
+  /* ── load backup status on mount ── */
+  useEffect(() => {
+    fetch('/api/backup-status')
+      .then(r => r.json())
+      .then(setBackupStatus)
+      .catch(() => setBackupStatus({ ok: null, at: null }));
+  }, []);
 
   /* ── load OneDrive config on mount ── */
   useEffect(() => {
@@ -250,6 +269,45 @@ export default function SettingsPanel({ onBack }) {
       {/* ── scrollable body ── */}
       <div style={{ flex:1, overflow:'auto' }}>
       <div style={{ padding:'22px', display:'flex', flexDirection:'column', gap:20 }}>
+
+        {/* ── Data backup status ── */}
+        <SectionCard
+          title="Data backup"
+          subtitle="All data files are backed up automatically each time Jobtool starts."
+        >
+          {backupStatus === null ? (
+            <div className="tw-muted" style={{ fontSize: 13 }}>Checking backup status…</div>
+          ) : backupStatus.at ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <Icon
+                name={backupStatus.ok ? 'checkCircle' : 'alertCircle'}
+                size={18}
+                style={{ flexShrink: 0, marginTop: 1, color: backupStatus.ok ? 'var(--success, #27ae60)' : 'var(--danger, #c0392b)' }}
+              />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {backupStatus.ok
+                    ? `Last backed up ${fmtBackupDate(backupStatus.at)} · ${backupStatus.destination === 'onedrive' ? 'OneDrive' : 'Local folder'}`
+                    : `Last backup failed · ${fmtBackupDate(backupStatus.at)}`}
+                </div>
+                {backupStatus.ok && backupStatus.files?.length > 0 && (
+                  <div className="tw-muted" style={{ fontSize: 12, marginTop: 3 }}>
+                    {backupStatus.files.join(', ')} → {backupStatus.folder}
+                  </div>
+                )}
+                {!backupStatus.ok && backupStatus.error && (
+                  <div style={{ fontSize: 12, color: 'var(--danger, #c0392b)', marginTop: 3 }}>
+                    {backupStatus.error}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="tw-muted" style={{ fontSize: 13 }}>
+              No backup recorded yet — will run automatically on the next start.
+            </div>
+          )}
+        </SectionCard>
 
         {/* ── Azure OCR section ── */}
         <SectionCard

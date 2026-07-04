@@ -6,10 +6,12 @@ import useFollowups from '../../hooks/useFollowups';
 import {
   addInteraction, patchCustomer, addCustomer, deleteCustomer, replaceCustomers,
 } from '../../services/followups';
+import { fillTemplate, DEFAULT_TEMPLATES } from './templates';
+import { nameMatchScore } from '../../services/nameMatcher';
 
 const LOGGED_BY = 'Admin';
 const IMPORT_KEY = 'tidewell.followups.import';
-const DEFAULT_IMPORT = { file: 'Sample data (seeded)', sheet: 'Aged debtors', date: '', time: '' };
+const DEFAULT_IMPORT = { file: 'Outstanding invoices list', sheet: 'Aged debtors', date: '', time: '' };
 const nowTime = () => new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
 
 const METHODS = [
@@ -22,6 +24,10 @@ const METHODS = [
 const LABELS = { call: 'Called', whatsapp: 'WhatsApp', email: 'Emailed', visit: 'Visited', note: 'Note', task: 'To-do' };
 const didLabel = (m) => LABELS[m] || m;
 const didIcon = (m) => m === 'call' ? <FI.phone /> : m === 'whatsapp' ? <FI.whatsapp /> : m === 'email' ? <FI.mail /> : m === 'visit' ? <FI.pin /> : m === 'task' ? <FI.flag /> : <FI.note />;
+/* An entry may record several methods at once (dids: ['call','whatsapp',…]);
+   older entries only carry the single `did`. */
+const didsOf = (a) => (Array.isArray(a.dids) && a.dids.length ? a.dids : [a.did]);
+const didsLabel = (a) => didsOf(a).map(didLabel).join(', ');
 
 /* ── shared interactions table ── */
 function InteractionsTable({ entries, emptyText }) {
@@ -33,9 +39,9 @@ function InteractionsTable({ entries, emptyText }) {
       <tbody>
         {entries.map((a) => (
           <tr key={a.id}>
-            <td className="ty">
-              <span className={'tymark v-' + a.did}>{didIcon(a.did)}</span>
-              <span className="tylab">{didLabel(a.did)}{a.invoice && <span className="invref">{a.invoice}</span>}</span>
+            <td className={'ty' + (didsOf(a).length > 1 ? ' multi' : '')}>
+              {didsOf(a).map((d) => <span key={d} className={'tymark v-' + d}>{didIcon(d)}</span>)}
+              <span className="tylab">{didsLabel(a)}{a.invoice && <span className="invref">{a.invoice}</span>}</span>
             </td>
             <td className="ca">{a.date}<span className="t">{a.time}</span></td>
             <td className="no"><span className="said">{a.said}</span><span className="by">{a.by}</span></td>
@@ -118,7 +124,7 @@ function ActionRow({ r, onOpen }) {
               ? <span className="fu firstcontact"><FI.phone />Needs first contact</span>
               : <FuChip iso={null} />}
         {last
-          ? <span className="lastln">Last: {didLabel(last.did).toLowerCase()} {last.date}</span>
+          ? <span className="lastln">Last: {didsLabel(last).toLowerCase()} {last.date}</span>
           : plannedIsTask
             ? <span className="lastln"><FI.flag style={{ width: 11, height: 11, verticalAlign: -1, marginRight: 3 }} />Task you added</span>
             : null}
@@ -178,7 +184,7 @@ function HistoryGroups({ groups, query, onOpen }) {
                 <div className="cnt">{g.entries.length} interaction{g.entries.length > 1 ? 's' : ''}</div>
               </div>
               <div className="prev">
-                <span className={'verb v-' + last.did}>{didLabel(last.did)}</span>
+                <span className={'verb v-' + last.did}>{didsLabel(last)}</span>
                 <span className="said">{hl(last.said)}</span>
               </div>
               <div className="aside">
@@ -244,7 +250,7 @@ function PrintDoc({ customer, entries }) {
           {entries.map((a) => (
             <tr key={a.id}>
               <td className="nw">{a.date}<br />{a.time}</td>
-              <td className="nw">{didLabel(a.did)}</td>
+              <td className="nw">{didsLabel(a)}</td>
               <td className="nw">{a.invoice || '—'}</td>
               <td>{a.said}</td>
               <td className="nw">{a.followUpIso ? S.isoToDisp(a.followUpIso) + (a.followUpTime ? ' ' + a.followUpTime : '') : '—'}</td>
@@ -256,8 +262,8 @@ function PrintDoc({ customer, entries }) {
 }
 
 /* ── customer drawer: combined history + log ── */
-function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
-  const [did, setDid] = useState('call');
+function CustomerDrawer({ customer, history, onClose, onSave, onDelete, templates }) {
+  const [dids, setDids] = useState(['call']);
   const [said, setSaid] = useState('');
   const [fuOn, setFuOn] = useState(true);
   const [fuDate, setFuDate] = useState(S.addDaysIso(S.TODAY_ISO, 7));
@@ -265,17 +271,30 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
   const [osStr, setOsStr] = useState('');
   const [invPaid, setInvPaid] = useState({});
   const [confirmDel, setConfirmDel] = useState(false);
+  const [jobHistory, setJobHistory] = useState([]);
   const c = customer || {};
 
   useEffect(() => {
     if (customer) {
-      setDid('call'); setSaid(''); setFuOn(true);
+      setDids(['call']); setSaid(''); setFuOn(true);
       setFuDate(S.addDaysIso(S.TODAY_ISO, 7)); setFuTime('09:00');
       const paid = {};
       (customer.invoices || []).forEach((iv) => { if (iv.paid) paid[iv.no] = true; });
       setInvPaid(paid);
       setOsStr(String(S.owed(customer)));
       setConfirmDel(false);
+      // Feature 2B: load job history for this customer
+      fetch('/api/jobs')
+        .then((r) => r.json())
+        .then((jobs) => {
+          const matches = jobs.filter(
+            (j) => j.capturedAt && nameMatchScore(j.customer?.name, customer.name) >= 0.8
+          ).slice(0, 6);
+          setJobHistory(matches);
+        })
+        .catch(() => {});
+    } else {
+      setJobHistory([]);
     }
   }, [customer]);
 
@@ -290,9 +309,15 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
   const recalcOutstanding = () => setOsStr(String(S.sumUnpaid(c, invPaid)));
   const outstandingNum = parseMoney(osStr);
 
+  /* toggle a method on/off, keep at least one selected, keep METHODS order */
+  const toggleDid = (mid) => setDids((prev) => {
+    if (prev.includes(mid)) return prev.length > 1 ? prev.filter((x) => x !== mid) : prev;
+    return METHODS.map((m) => m.id).filter((id) => id === mid || prev.includes(id));
+  });
+
   const QUICK = [{ label: 'In 3 days', n: 3 }, { label: 'In 1 week', n: 7 }, { label: 'In 2 weeks', n: 14 }];
   const save = () => onSave({
-    did, said: said.trim(),
+    dids, said: said.trim(),
     followUpIso: fuOn ? fuDate : null, followUpTime: fuOn ? fuTime : null,
     outstanding: outstandingNum, invoicePaid: invPaid,
   });
@@ -349,7 +374,7 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
                         <input type="checkbox" checked={paid} onChange={() => toggleInv(iv.no)} />
                         <span className="no">{iv.no}</span>
                         <span className="amt">{S.fmtR(iv.amount)}</span>
-                        <span className={'days ' + (iv.days >= 90 ? 't90' : iv.days >= 60 ? 't60' : iv.days >= 30 ? 't30' : 't0')}>{iv.days}d</span>
+                        <span className={'days ' + (S.invDays(iv) >= 90 ? 't90' : S.invDays(iv) >= 60 ? 't60' : S.invDays(iv) >= 30 ? 't30' : 't0')}>{S.invDays(iv)}d</span>
                         <span className="state">{paid ? 'Paid' : 'Affected'}</span>
                       </label>);
                   })}
@@ -360,13 +385,31 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
               )}
             </div>
 
-            <div className="sl-q">What was done?</div>
+            <div className="sl-q">What was done? <span className="opt">tick everything that happened</span></div>
             <div className="sl-methods">
               {METHODS.map((m) => (
-                <button key={m.id} className={'sl-method' + (did === m.id ? ' on' : '')} onClick={() => setDid(m.id)}>
+                <button key={m.id} className={'sl-method' + (dids.includes(m.id) ? ' on' : '')} onClick={() => toggleDid(m.id)} aria-pressed={dids.includes(m.id)}>
                   <span className="mi"><m.icon /></span><span className="ml">{m.label}</span>
                 </button>))}
             </div>
+
+            {(templates || []).length > 0 && (
+              <>
+                <div className="sl-q">Quick template <span className="opt">optional — fills the note below</span></div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                  {(templates || []).map((tpl) => (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      className="tw-btn tw-btn--sm"
+                      onClick={() => setSaid(fillTemplate(tpl.body, c, S.owed(c), S.openInvoices(c), S.oldestDays(c)))}
+                    >
+                      {tpl.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="sl-q">What was said / agreed?</div>
             <textarea className="sl-ta" value={said} onChange={(e) => setSaid(e.target.value)}
@@ -405,6 +448,22 @@ function CustomerDrawer({ customer, history, onClose, onSave, onDelete }) {
             </div>
             <div className="sl-histtitle">Interaction history</div>
             <InteractionsTable entries={history} emptyText="No interactions yet — log the first one on the left." />
+
+            {jobHistory.length > 0 && (
+              <>
+                <div className="sl-histtitle" style={{ marginTop: 14 }}>Captured job cards</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                  {jobHistory.map((j) => (
+                    <div key={j.id} style={{ display: 'flex', gap: 10, fontSize: 12, padding: '6px 10px', background: 'var(--bg)', borderRadius: 6, alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--ink-1)', minWidth: 60 }}>{j.ref || j.id}</span>
+                      <span style={{ color: 'var(--ink-2)', flex: 1 }}>{j.date || '—'}</span>
+                      <span style={{ color: 'var(--ink-2)', fontFamily: 'monospace' }}>{j.invoiceNumber || 'No invoice'}</span>
+                      {j.charges?.total && <span style={{ color: 'var(--ink-1)' }}>R {Number(String(j.charges.total).replace(/[^\d.]/g, '')).toLocaleString('en-ZA')}</span>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -794,6 +853,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
   const [showSettings, setShowSettings] = useState(false);
   const [workDate, setWorkDate] = useState(S.TODAY_ISO);
   const [toast, setToast] = useState(null);
+  const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [importMeta, setImportMeta] = useState(() => {
     try { return JSON.parse(localStorage.getItem(IMPORT_KEY)) || DEFAULT_IMPORT; } catch { return DEFAULT_IMPORT; }
   });
@@ -808,6 +868,13 @@ export default function FollowupsApp({ workspaceSwitch }) {
   S.setToday(workDate);
 
   useEffect(() => { try { localStorage.setItem(IMPORT_KEY, JSON.stringify(importMeta)); } catch (_) {} }, [importMeta]);
+
+  useEffect(() => {
+    fetch('/api/templates')
+      .then((r) => r.json())
+      .then((saved) => { if (Array.isArray(saved) && saved.length) setTemplates(saved); })
+      .catch(() => {});
+  }, []);
 
   const custById = useMemo(() => Object.fromEntries(customers.map((c) => [c.id, c])), [customers]);
   const nameById = (id) => (custById[id] || {}).name || id;
@@ -858,13 +925,13 @@ export default function FollowupsApp({ workspaceSwitch }) {
 
   const flash = (msg) => { setToast(msg); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(null), 3000); };
 
-  const saveLog = async ({ did, said, followUpIso, followUpTime, outstanding, invoicePaid }) => {
+  const saveLog = async ({ dids, said, followUpIso, followUpTime, outstanding, invoicePaid }) => {
     const c = custById[drawerId];
     if (!c) return;
     const affected = (c.invoices || []).filter((iv) => !(invoicePaid && invoicePaid[iv.no])).map((iv) => iv.no);
     const entry = {
       id: 'L-' + Date.now(), customerId: c.id, date: S.isoToDisp(S.TODAY_ISO), time: nowTime(),
-      by: LOGGED_BY, did, invoice: affected.length === 1 ? affected[0] : null, said,
+      by: LOGGED_BY, did: dids[0], dids, invoice: affected.length === 1 ? affected[0] : null, said,
       followUpIso: followUpIso || null, followUpTime: followUpTime || null,
     };
     const clearedOut = typeof outstanding === 'number' && outstanding <= 0;
@@ -880,7 +947,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
     flash(clearedOut
       ? c.name + ' — fully paid, removed from the list'
       : followUpIso
-        ? didLabel(did) + ' ' + c.name + ' — next follow-up ' + S.isoToDisp(followUpIso)
+        ? didsLabel(entry) + ' ' + c.name + ' — next follow-up ' + S.isoToDisp(followUpIso)
         : c.name + ' marked settled — removed from the list');
   };
 
@@ -930,7 +997,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
   const exportCsv = (cust, entries) => {
     const header = ['Date', 'Time', 'Type', 'Invoice', 'What was said / agreed', 'Next follow-up', 'Logged by'];
     const esc = (s) => `"${String(s == null ? '' : s).replace(/"/g, '""')}"`;
-    const lines = entries.map((a) => [a.date, a.time, didLabel(a.did), a.invoice || '', a.said,
+    const lines = entries.map((a) => [a.date, a.time, didsLabel(a), a.invoice || '', a.said,
       a.followUpIso ? S.isoToDisp(a.followUpIso) + (a.followUpTime ? ' ' + a.followUpTime : '') : '', a.by]);
     const csv = [header, ...lines].map((r) => r.map(esc).join(',')).join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -940,6 +1007,95 @@ export default function FollowupsApp({ workspaceSwitch }) {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
     flash(`Exported ${entries.length} interaction${entries.length === 1 ? '' : 's'} for ${cust.name} to CSV`);
+  };
+
+  const exportOpenActionsReport = async () => {
+    const openRows = rows.filter((r) => !r.resolved);
+    if (!openRows.length) { flash('No open actions to export.'); return; }
+
+    const xlsx = await import('xlsx');
+    const today = S.isoToDisp(S.TODAY_ISO);
+
+    const aoa = [];
+    const customerRowSet = new Set();
+    let rowIdx = 0;
+
+    aoa.push(['Open follow-up actions report', '', '', '', '', '']); rowIdx++;
+    aoa.push(['Generated:', today, `${openRows.length} open task${openRows.length === 1 ? '' : 's'}`, '', S.fmtR(totalOwed) + ' total outstanding', '']); rowIdx++;
+    aoa.push([]); rowIdx++;
+
+    for (const { c, planned, plannedTime } of openRows) {
+      const entries = (histByCust[c.id] || []).filter((e) => e.did !== 'task');
+      const amtOwed = S.owed(c);
+      const contact = [c.contact, c.phone, c.email].filter((x) => x && x !== '—').join(' · ') || '—';
+      const nextFu = planned
+        ? (S.isoToDisp(planned) + (plannedTime ? ', ' + plannedTime : ''))
+        : 'Not planned';
+      const openInvs = S.openInvoices(c);
+
+      // Customer header row — bold, col A = name, cols B–G = summary
+      customerRowSet.add(rowIdx);
+      aoa.push([
+        c.name,
+        contact,
+        amtOwed > 0 ? S.fmtR(amtOwed) + ' outstanding' : 'No outstanding amount',
+        'Next follow-up: ' + nextFu,
+        openInvs.length + ' open invoice' + (openInvs.length !== 1 ? 's' : ''),
+        openInvs.length ? 'Oldest: ' + S.oldestDays(c) + 'd' : '',
+        '',
+      ]); rowIdx++;
+
+      if (!entries.length) {
+        // col A = customer name, col B = message
+        aoa.push([c.name, '(No interactions logged yet)', '', '', '', '', '']); rowIdx++;
+      } else {
+        // Sub-header: col A = customer name, cols B–G = column labels
+        aoa.push([c.name, 'Type', 'Date & time', 'Invoice', 'What was said / agreed', 'Next follow-up', 'Logged by']); rowIdx++;
+        for (const e of entries) {
+          const fuDisp = e.followUpIso
+            ? S.isoToDisp(e.followUpIso) + (e.followUpTime ? ', ' + e.followUpTime : '')
+            : '—';
+          // col A = customer name repeated for every log row → filterable in Excel
+          aoa.push([
+            c.name,
+            didsLabel(e),
+            e.date + (e.time ? ' ' + e.time : ''),
+            e.invoice || '—',
+            e.said,
+            fuDisp,
+            e.by,
+          ]); rowIdx++;
+        }
+      }
+
+      aoa.push([]); rowIdx++; // blank separator
+    }
+
+    const ws = xlsx.utils.aoa_to_sheet(aoa);
+
+    // Bold the customer header rows
+    const wsRange = xlsx.utils.decode_range(ws['!ref'] || 'A1');
+    for (const r of customerRowSet) {
+      for (let col = wsRange.s.c; col <= wsRange.e.c; col++) {
+        const addr = xlsx.utils.encode_cell({ r, c: col });
+        if (ws[addr]) ws[addr].s = { font: { bold: true } };
+      }
+    }
+
+    ws['!cols'] = [
+      { wch: 28 },  // A: Customer name (repeated)
+      { wch: 30 },  // B: Contact / type
+      { wch: 22 },  // C: Amount / date & time
+      { wch: 18 },  // D: Next fu summary / invoice
+      { wch: 50 },  // E: Notes / next fu header
+      { wch: 22 },  // F: Invoice count / next fu
+      { wch: 16 },  // G: Oldest / logged by
+    ];
+
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, 'Open Actions');
+    xlsx.writeFile(wb, `Open follow-up actions - ${today}.xlsx`);
+    flash(`Exported ${openRows.length} customer${openRows.length === 1 ? '' : 's'} to Excel`);
   };
 
   const printInteractions = (cust) => {
@@ -977,19 +1133,24 @@ export default function FollowupsApp({ workspaceSwitch }) {
       const amount = parseMoney(r[map.amount]);
       if (!name || !amount) return;
       let days = 0;
+      const invDate = map.date != null ? isoFromDateCell(r[map.date]) : null;
       if (map.days != null) days = Math.max(0, Math.round(Number(String(r[map.days]).replace(/[^\d.-]/g, '')) || 0));
-      else if (map.date != null) days = daysFromCell(r[map.date]);
+      else if (invDate) days = Math.max(0, S.daysBetween(invDate, S.TODAY_ISO));
+      // Store enough info for live-recalculation of days as time passes
+      const invExtra = invDate
+        ? { invoiceDate: invDate }
+        : { importedDays: days, importedAt: S.TODAY_ISO };
       const no = (map.invoice != null ? String(r[map.invoice] ?? '').trim() : '') || ('IMP-' + (++autoInv));
       const key = norm(name);
       const existing = byName.get(key);
       if (existing) {
         if ((existing.invoices || []).some((i) => i.no === no)) { skipped++; return; }
-        existing.invoices.push({ no, amount, days });
+        existing.invoices.push({ no, amount, days, ...invExtra });
         if (typeof existing.outstanding === 'number') existing.outstanding += amount;
         existing.settled = false;
         addedInvoices++; addedValue += amount;
       } else {
-        byName.set(key, { id: 'C-IMP' + Date.now() + '-' + (++autoId), name, contact: '', phone: '', email: null, invoices: [{ no, amount, days }] });
+        byName.set(key, { id: 'C-IMP' + Date.now() + '-' + (++autoId), name, contact: '', phone: '', email: null, invoices: [{ no, amount, days, ...invExtra }] });
         addedCustomers++; addedInvoices++; addedValue += amount;
       }
     });
@@ -1051,7 +1212,10 @@ export default function FollowupsApp({ workspaceSwitch }) {
                 <FI.history />History
               </button>
             </div>
-            <button className="tw-btn tw-btn--primary sl-newtask" onClick={() => setShowTask(true)}><FI.plus />New task</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="tw-btn" onClick={exportOpenActionsReport}><FI.excel />Export report</button>
+              <button className="tw-btn tw-btn--primary sl-newtask" onClick={() => setShowTask(true)}><FI.plus />New task</button>
+            </div>
           </div>
 
           {tab === 'todo'
@@ -1076,7 +1240,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
               </>}
         </div>
 
-        <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} onDelete={deleteTask} />
+        <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} onDelete={deleteTask} templates={templates} />
         <TaskModal open={showTask} customers={customers} onClose={() => setShowTask(false)} onSave={saveTask} />
         <SettingsModal open={showSettings} customers={customers} onClose={() => setShowSettings(false)}
           onSaveCustomer={saveCustomerDetails} onAddCustomer={addCustomerFromSettings} />

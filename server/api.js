@@ -165,6 +165,79 @@ async function uploadToOneDrive(cfg, buffer, fileName, mimeType) {
   return { oneDriveItemId: item.id };
 }
 
+/* ── Templates store ────────────────────────────────────── */
+const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
+
+/* ── Backup ─────────────────────────────────────────────── */
+const BACKUP_LOG_FILE = path.join(DATA_DIR, 'backup-log.json');
+
+const BACKUP_FILES = [
+  { name: 'jobs.json',         src: DATA_FILE },
+  { name: 'customers.json',    src: CUSTOMERS_FILE },
+  { name: 'interactions.json', src: INTERACTIONS_FILE },
+  { name: 'technicians.json',  src: TECHS_FILE },
+];
+
+function backupStamp() {
+  const n = new Date();
+  const p = (x) => String(x).padStart(2, '0');
+  return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}_${p(n.getHours())}-${p(n.getMinutes())}`;
+}
+
+async function runBackup() {
+  const stamp      = backupStamp();
+  const cfg        = readOneDriveConfig();
+  const useOneDrive = isOneDriveReady(cfg);
+  const backed     = [];
+  let   destination, folder, error;
+
+  try {
+    if (useOneDrive) {
+      destination = 'onedrive';
+      folder      = `Jobtool Backups/${stamp}`;
+      const token   = await getGraphToken(cfg);
+      const userRef = encodeURIComponent(cfg.userId);
+
+      for (const f of BACKUP_FILES) {
+        if (!fs.existsSync(f.src)) continue;
+        const buf = fs.readFileSync(f.src);
+        const url = `https://graph.microsoft.com/v1.0/users/${userRef}/drive/root:/${folder}/${f.name}:/content`;
+        const res = await fetch(url, {
+          method:  'PUT',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body:    buf,
+        });
+        if (!res.ok) { const t = await res.text(); throw new Error(`${f.name}: ${t}`); }
+        backed.push(f.name);
+      }
+    } else {
+      destination = 'local';
+      folder      = path.join('data', 'backups', stamp);
+      const backupDir = path.join(DATA_DIR, 'backups', stamp);
+      fs.mkdirSync(backupDir, { recursive: true });
+      for (const f of BACKUP_FILES) {
+        if (!fs.existsSync(f.src)) continue;
+        fs.copyFileSync(f.src, path.join(backupDir, f.name));
+        backed.push(f.name);
+      }
+    }
+
+    fs.writeFileSync(BACKUP_LOG_FILE, JSON.stringify(
+      { at: new Date().toISOString(), destination, folder, files: backed, ok: true }, null, 2
+    ));
+  } catch (err) {
+    error = err.message || 'Unknown error';
+    try {
+      fs.writeFileSync(BACKUP_LOG_FILE, JSON.stringify(
+        { at: new Date().toISOString(), destination: destination || (useOneDrive ? 'onedrive' : 'local'), files: backed, ok: false, error }, null, 2
+      ));
+    } catch (_) {}
+  }
+}
+
+// Run 8 s after startup — long enough for the server to finish initialising.
+setTimeout(() => { runBackup().catch(() => {}); }, 8000);
+
 /* ── HTTP helpers ───────────────────────────────────────── */
 function collectBody(req) {
   return new Promise((resolve, reject) => {
@@ -409,6 +482,90 @@ export async function handleRequest(req, res, next) {
         writeJsonFile(INTERACTIONS_FILE, list);
         return send(res, 201, body);
       }
+    }
+
+    /* ── backup status ───────────────────────────────────── */
+    if (resource === 'backup-status' && method === 'GET') {
+      try {
+        return send(res, 200, JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')));
+      } catch {
+        return send(res, 200, { ok: null, at: null });
+      }
+    }
+
+    /* ── templates ───────────────────────────────────────── */
+    if (resource === 'templates') {
+      if (method === 'GET') {
+        try { return send(res, 200, JSON.parse(fs.readFileSync(TEMPLATES_FILE, 'utf-8'))); }
+        catch { return send(res, 200, []); }
+      }
+      if (method === 'PUT') {
+        const body = await collectBody(req);
+        if (!Array.isArray(body)) return send(res, 400, { error: 'Expected array' });
+        writeJsonFile(TEMPLATES_FILE, body);
+        return send(res, 200, body);
+      }
+    }
+
+    /* ── dashboard ───────────────────────────────────────── */
+    if (resource === 'dashboard' && method === 'GET') {
+      const jobs         = readJobs();
+      const customers    = readCustomers();
+      const interactions = readInteractions();
+      const today        = new Date().toISOString().slice(0, 10);
+
+      const pendingCapture  = jobs.filter((j) => j.status === 'printed' && !j.capturedAt).length;
+      const capturedToday   = jobs.filter((j) => (j.capturedAt || '').slice(0, 10) === today).length;
+      const totalOutstanding = customers
+        .filter((c) => !c.settled)
+        .reduce((sum, c) => sum + (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0), 0);
+
+      // interactions are newest-first; first followUpIso per customer is the active plan
+      const activePlan = {};
+      const contacted  = new Set();
+      for (const a of interactions) {
+        if (a.followUpIso && !(a.customerId in activePlan)) activePlan[a.customerId] = a.followUpIso;
+        if (a.did !== 'task') contacted.add(a.customerId);
+      }
+      const overdueCount  = customers.filter((c) => !c.settled && activePlan[c.id] && activePlan[c.id] < today).length;
+      const needsFirst    = customers.filter((c) => !c.settled && !contacted.has(c.id)).length;
+      const openFollowups = customers.filter((c) => !c.settled && c.invoices?.some((i) => !i.paid)).length;
+
+      /* Merged activity feed: follow-up interactions + job events (scanned in,
+         captured into Sage), newest first. Interaction ids embed their epoch
+         (`L-<ms>`); job events carry ISO timestamps. */
+      const custMap = Object.fromEntries(customers.map((c) => [c.id, c.name]));
+      const dispDate = (ms) => {
+        const d = new Date(ms);
+        return `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]} ${d.getFullYear()}`;
+      };
+      const tsOfInteraction = (a) => {
+        const ms = Number(String(a.id).split('-')[1]);
+        if (Number.isFinite(ms) && ms > 0) return ms;
+        const parsed = Date.parse(`${a.date} ${a.time || '00:00'}`);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      const feed = interactions
+        .filter((a) => a.did !== 'task')
+        .map((a) => ({ id: a.id, ts: tsOfInteraction(a), customerName: custMap[a.customerId] || 'Unknown', did: a.did, dids: a.dids, date: a.date, said: a.said, by: a.by }));
+      for (const j of jobs) {
+        const name = j.customer?.name || j.invoiceCustomer || 'Unknown';
+        if (j.capturedAt) {
+          const ts = Date.parse(j.capturedAt) || 0;
+          const total = j.charges?.total;
+          feed.push({ id: `${j.id}-cap`, ts, customerName: name, did: 'captured', date: dispDate(ts), said: `Job ${j.ref || ''}${total ? ` · R ${total}` : ''} captured into Sage`, by: 'Admin' });
+        }
+        if (j.ocrImport?.at) {
+          const ts = Date.parse(j.ocrImport.at) || 0;
+          feed.push({ id: `${j.id}-ocr`, ts, customerName: name, did: 'scanned', date: dispDate(ts), said: `Job card ${j.ref || ''} imported${j.ocrImport.sourceFileName ? ` from ${j.ocrImport.sourceFileName}` : ''}`, by: 'OCR' });
+        }
+      }
+      const recentActivity = feed.sort((a, b) => b.ts - a.ts).slice(0, 10);
+
+      let lastBackup = null;
+      try { lastBackup = JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')); } catch {}
+
+      return send(res, 200, { pendingCapture, capturedToday, totalOutstanding, overdueCount, needsFirst, openFollowups, recentActivity, lastBackup });
     }
 
     send(res, 404, { error: 'Unknown API route' });

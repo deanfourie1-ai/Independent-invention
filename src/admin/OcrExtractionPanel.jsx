@@ -89,7 +89,7 @@ function isPdfMime(mime) {
 /* Numeric cost fields where typing an expression like "443+399" should
    evaluate to its result. Date/text fields are deliberately excluded so a
    value like "2026-06-05" is never mistaken for subtraction. */
-const CALCULABLE_FIELDS = new Set(['callOutFee', 'labour', 'materialsOther', 'total']);
+const CALCULABLE_FIELDS = new Set(['callOutFee', 'labour', 'materialsUsed', 'materialsOther', 'total']);
 
 /* Safely evaluate a simple arithmetic expression (digits, + - * / and
    parentheses only). Returns the original string if it isn't a pure
@@ -440,9 +440,10 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const customerName = String(fields.customerName?.value || '').trim();
     const customerAddress = String(fields.customerAddress?.value || '').trim();
     const jobDone = String(fields.workDescription?.value || '').trim();
-    const materials = String(fields.materialsUsed?.value || '').trim();
+    const materialCost = String(fields.materialsUsed?.value || '').trim();
     const callOutFee = String(fields.callOutFee?.value || '').trim();
     const labour = String(fields.labour?.value || '').trim();
+    const materialsOtherCost = String(fields.materialsOther?.value || '').trim();
     const total = String(fields.total?.value || '').trim();
     const invoiceNumber = String(fields.invoiceNumber?.value || '').trim();
 
@@ -472,10 +473,11 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         date: parsedDate,
         invoiceNumber,
         jobDone,
-        materials,
         charges: {
           callOutFee,
           labour,
+          materialCost,
+          materialsOther: materialsOtherCost,
           total,
         },
         customer: {
@@ -532,20 +534,21 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const description = String(fields.workDescription?.value || '').trim();
     if (description) patch.jobDone = description;
 
-    const materials = String(fields.materialsUsed?.value || '').trim();
-    if (materials) patch.materials = materials;
-
     const parsedStatus = normalizeStatus(fields.status?.value);
     if (parsedStatus) patch.status = parsedStatus;
 
     const callOutFee = String(fields.callOutFee?.value || '').trim();
     const labour = String(fields.labour?.value || '').trim();
+    const materialCost = String(fields.materialsUsed?.value || '').trim();
+    const materialsOtherCost = String(fields.materialsOther?.value || '').trim();
     const total = String(fields.total?.value || '').trim();
-    if (callOutFee || labour || total) {
+    if (callOutFee || labour || materialCost || materialsOtherCost || total) {
       patch.charges = {
         ...(job.charges || {}),
         ...(callOutFee ? { callOutFee } : {}),
         ...(labour ? { labour } : {}),
+        ...(materialCost ? { materialCost } : {}),
+        ...(materialsOtherCost ? { materialsOther: materialsOtherCost } : {}),
         ...(total ? { total } : {}),
       };
     }
@@ -566,7 +569,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       };
     }
 
-    if (!patch.date && !patch.jobDone && !patch.materials && !patch.invoiceNumber) {
+    if (!patch.date && !patch.jobDone && !patch.charges && !patch.invoiceNumber) {
       setError('No usable fields were detected to apply to this job card.');
       return;
     }
@@ -819,7 +822,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                         <tr key={key}>
                           <td className="mf">{fieldConfig[key]?.label || key}</td>
                           <td>
-                            {key === 'workDescription' || key === 'materialsUsed' ? (
+                            {key === 'workDescription' ? (
                               <textarea
                                 className="ocr-edit-input ocr-edit-area"
                                 value={field.value || ''}

@@ -14,7 +14,7 @@ npm install      # first time only
 npm run package
 ```
 
-This produces a version-stamped file like **`release/jobtoolAdmin-v0.2.0.exe`**
+This produces a version-stamped file like **`release/jobtoolAdmin-v0.3.2.exe`**
 (~60 MB). It bundles the app, the server, and the Node.js runtime into one file.
 The version comes from the `"version"` field in `package.json` — bump that before
 building to stamp a new number into the filename.
@@ -48,7 +48,7 @@ usually easiest). The file is large, so a shared link is recommended.
 ## Shipping an update later
 
 1. Make your code changes.
-2. Bump `"version"` in `package.json` (e.g. `0.2.0` → `0.2.1`).
+2. Bump `"version"` in `package.json` (e.g. `0.3.2` → `0.3.3`).
 3. Run `npm run package` again — it produces `jobtoolAdmin-v<new-version>.exe`.
 4. Send the new `.exe`. The user deletes the old one and runs the new one.
 
@@ -61,7 +61,7 @@ and settings carry over automatically.
 
 ```
 C:\Jobtool\
-   jobtoolAdmin-v0.2.0.exe   ← swap for the newer version on each update
+   jobtoolAdmin-v0.3.2.exe   ← swap for the newer version on each update
    data\                     ← job records + settings (created automatically, keep this)
    uploads\                  ← local scan images (only if OneDrive is not configured)
 ```
