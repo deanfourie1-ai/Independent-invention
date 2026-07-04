@@ -74,3 +74,26 @@ export async function addInteraction(entry) {
   emitChanged();
   return result;
 }
+
+/* ── import reconciliation ── */
+/* Applies a reconciled import in one request; the server snapshots the
+   previous state first so undoImport can restore it. */
+export async function applyImport(customers, interactions) {
+  const result = await jsonFetch('/api/followups/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customers, interactions }),
+  });
+  emitChanged();
+  return result;
+}
+
+export async function undoImport() {
+  const result = await jsonFetch('/api/followups/undo-import', { method: 'POST' });
+  emitChanged();
+  return result;
+}
+
+export function getImportUndoStatus() {
+  return jsonFetch('/api/followups/import-undo-status');
+}

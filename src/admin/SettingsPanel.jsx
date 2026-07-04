@@ -6,9 +6,8 @@ import {
   resetOcrFieldConfig,
   loadBethlehemOcrFieldConfig,
 } from '../services/ocrFieldConfig';
-
-const OCR_ENDPOINT_KEY = 'tidewell.ocr.endpoint';
-const OCR_API_KEY_KEY  = 'tidewell.ocr.key';
+import { fmtDateTime as fmtBackupDate } from '../services/dates';
+import { OCR_ENDPOINT_KEY, OCR_API_KEY_KEY } from '../services/ocrQueue';
 
 const DOT_TONES_CYCLE = ['blue', 'green', 'amber', 'violet'];
 
@@ -21,14 +20,6 @@ function readLS(key) {
 }
 function writeLS(key, val) {
   try { localStorage.setItem(key, val || ''); } catch {}
-}
-
-function fmtBackupDate(iso) {
-  if (!iso) return '';
-  const d   = new Date(iso);
-  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const p   = (n) => String(n).padStart(2, '0');
-  return `${p(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function fmtBytes(bytes) {

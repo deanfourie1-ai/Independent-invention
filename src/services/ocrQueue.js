@@ -16,8 +16,10 @@ import { analyzeJobCardImageQueued } from './documentIntelligence';
 import { loadOcrFieldConfig } from './ocrFieldConfig';
 import { addStagedDocs, makeStagedDoc } from './stagedDocs';
 
-const ENDPOINT_KEY = 'tidewell.ocr.endpoint';
-const API_KEY_KEY = 'tidewell.ocr.key';
+/* localStorage keys for the Azure OCR credentials — set in Settings, read here.
+   Exported so every consumer shares the one definition. */
+export const OCR_ENDPOINT_KEY = 'tidewell.ocr.endpoint';
+export const OCR_API_KEY_KEY = 'tidewell.ocr.key';
 const CHANGED_EVENT = 'tidewell:ocrqueue:changed';
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const ACCEPTED_MIME = /^(image\/|application\/pdf)/i;
@@ -103,8 +105,8 @@ async function pump() {
       const next = items.find((i) => i.status === 'queued');
       if (!next) break;
 
-      const endpoint = readLocal(ENDPOINT_KEY);
-      const apiKey = readLocal(API_KEY_KEY);
+      const endpoint = readLocal(OCR_ENDPOINT_KEY);
+      const apiKey = readLocal(OCR_API_KEY_KEY);
       if (!endpoint || !apiKey) {
         items = items.map((i) => (i.status === 'queued'
           ? { ...i, status: 'error', error: 'Azure OCR is not configured — open Settings (gear icon in Recapture) first.' }

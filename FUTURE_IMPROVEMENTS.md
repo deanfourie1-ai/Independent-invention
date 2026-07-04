@@ -1,4 +1,4 @@
-# Future improvements — Customer follow-ups
+# Future improvements
 
 Parking lot for ideas discussed but not yet built. Nothing here is committed work;
 it's a reference for when we pick the next thing to tackle.
@@ -225,6 +225,69 @@ in Settings (default: 30 days).
 - Only surface at ≥ 0.8 to avoid false positives on short/common names
 
 **Estimated scope:** A+B = medium. C = medium-large (new settings field + startup job).
+
+---
+
+## 9. OCR accuracy — 5-step improvement plan (staying on prebuilt-layout)
+
+**Context:** OCR uses Azure Document Intelligence `prebuilt-layout` (REST, API
+`2024-11-30`, hard-coded in `src/services/documentIntelligence.js`). The prebuilt
+model itself can't be trained — it only improves when Microsoft ships a new
+`api-version`. Everything below improves the parts *we* control: what we feed it,
+what we request, and how we interpret the response. Ordered so each step feeds
+the next — measurement first.
+
+### Step 1 — Accuracy feedback loop *(do first — makes everything else measurable)*
+When a reviewed job is saved, store the original OCR-parsed values alongside the
+admin's final values (e.g. `ocrSnapshot` on the job record in `jobs.json`). Add a
+per-field accuracy readout ("Invoice number: 94% accepted unchanged, Materials:
+61%") in Settings or History.
+- Where: staged-review save path (`OcrExtractionPanel.jsx` / `stagedDocs.js`),
+  job schema via `storage.js`, one read-only aggregation for the report.
+- Why first: cheapest step (the data already flows through the save path; we just
+  stop discarding half of it) and it turns Steps 2–4 into measured decisions.
+
+### Step 2 — Scan-quality gate at ingest
+Use the `averageWordConfidence` already computed in
+`normalizeAnalyzeResult()` to flag weak scans immediately after OCR — a "low scan
+quality, consider rescanning" banner below a threshold (start ~0.85, tune with
+Step 1 data) plus per-field confidence colouring in the review UI.
+- Why: a bad scan currently looks identical to a good one until the admin starts
+  finding errors mid-review.
+
+### Step 3 — Consume layout data we already pay for: tables, selection marks, handwriting
+Extend `normalizeAnalyzeResult()` to pass through `tables[]`, `selectionMarks`,
+and `styles` (currently dropped from every response). In `jobCardParser.js`: read
+the money fields (call-out fee, labour, materials, total) from the detected table
+when present — positional cells beat key-value guessing for that block — and use
+handwritten-span styles to discount confidence on handwriting-heavy fields.
+- Why: extraction quality gained from response data already in every API result —
+  no extra calls, no cost, no tier change.
+
+### Step 4 — Matcher-miss helper in Settings
+The `keyMatchers` in `ocrFieldConfig.js` are the ongoing tuning knob, but adding a
+variant means hand-writing regex. Keep the last N runs' *unmatched* keyValuePairs
+(keys layout found that mapped to no field), show them in the Settings field-config
+editor, and offer one-click "add as matcher for [field]".
+- Why: turns tuning from a developer task into a 10-second admin task — which is
+  what makes "improve over time" survive handover. Builds on Step 1's per-field
+  weakness data.
+
+### Step 5 — Preserve a labelled training set (keeps the custom-model exit cheap)
+Add a History export bundling, per job, the stored scan reference plus the final
+corrected field values (JSON alongside the existing Excel export). Nearly free once
+Step 1's snapshot exists.
+- Why: if prebuilt-layout plateaus despite Steps 1–4, this archive *is* the
+  training data for a custom Document Intelligence model — data collection goes
+  from a months-long project to already-done, without committing to anything now.
+
+**Sizing:** Steps 1, 2, 5 small (a focused session each); Steps 3, 4 medium.
+Order matters mainly for 1 → 4/5; Steps 2 and 3 can slot in anytime.
+
+**Non-local levers (outside the tool, noted for completeness):** redesign the
+printed job card with clearer labels/boxes (keyValuePairs accuracy is largely a
+function of form layout), scan at 300 DPI, and — once volume justifies a paid S0
+tier — the `queryFields` / `ocrHighResolution` add-on features.
 
 ---
 

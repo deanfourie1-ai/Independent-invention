@@ -161,9 +161,6 @@ html, body { height: 100%; margin: 0; }
 .btn-danger { background: var(--failed); color: #fff; }
 .btn-danger:hover { filter: brightness(.94); }
 
-.btn-block { width: 100%; }
-.btn-lg { min-height: 58px; font-size: 17px; border-radius: 14px; }
-
 /* ---------- badges ---------- */
 .badge {
   display: inline-flex;
@@ -196,94 +193,4 @@ html, body { height: 100%; margin: 0; }
   display: flex;
   flex-direction: column;
 }
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  padding: 14px 22px;
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-  backdrop-filter: blur(8px);
-  position: sticky;
-  top: 0;
-  z-index: 40;
-}
 .brand { display: flex; align-items: center; gap: 11px; }
-.brand-mark {
-  width: 34px; height: 34px; border-radius: 9px;
-  background: var(--primary); color: #fff;
-  display: grid; place-items: center;
-  box-shadow: var(--shadow-1);
-}
-.brand-mark svg { width: 20px; height: 20px; }
-.brand-name { font-weight: 800; font-size: 16px; letter-spacing: -.01em; }
-.brand-sub { font-size: 12.5px; color: var(--text-faint); font-weight: 600; }
-
-.role-tabs {
-  display: flex;
-  gap: 3px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 4px;
-}
-.role-tab {
-  appearance: none; border: 0; background: transparent;
-  font-family: var(--font); font-size: 14px; font-weight: 600;
-  color: var(--text-muted);
-  padding: 9px 16px; border-radius: 9px; cursor: pointer;
-  display: flex; align-items: center; gap: 8px;
-  transition: background .12s, color .12s;
-}
-.role-tab svg { width: 17px; height: 17px; }
-.role-tab:hover { color: var(--text); }
-.role-tab[aria-selected='true'] {
-  background: var(--surface); color: var(--text);
-  box-shadow: var(--shadow-1);
-}
-.spacer { flex: 1; }
-
-.theme-toggle {
-  appearance: none; cursor: pointer;
-  width: 44px; height: 44px; border-radius: 11px;
-  border: 1px solid var(--border-strong); background: var(--surface);
-  color: var(--text); display: grid; place-items: center;
-}
-.theme-toggle:hover { background: var(--surface-2); }
-.theme-toggle svg { width: 19px; height: 19px; }
-
-.conn-pill {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 13px; font-weight: 600;
-  padding: 8px 13px; border-radius: var(--r-pill);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.conn-pill svg { width: 16px; height: 16px; }
-.conn-pill.online { color: var(--synced); border-color: color-mix(in srgb, var(--synced) 35%, var(--border)); }
-.conn-pill.offline { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); background: var(--warn-bg); }
-
-/* ---------- stage body ---------- */
-.stage-body {
-  flex: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 38px 24px 60px;
-  overflow: auto;
-}
-.stage-hint {
-  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
-  font-size: 12.5px; color: var(--text-faint); font-weight: 600;
-  background: color-mix(in srgb, var(--surface) 80%, transparent);
-  border: 1px solid var(--border); border-radius: var(--r-pill);
-  padding: 7px 15px; backdrop-filter: blur(6px); z-index: 30;
-  display: flex; align-items: center; gap: 8px;
-}
-.kbd {
-  font-family: var(--mono); font-size: 11px; font-weight: 600;
-  background: var(--surface-3); border: 1px solid var(--border);
-  border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px;
-}

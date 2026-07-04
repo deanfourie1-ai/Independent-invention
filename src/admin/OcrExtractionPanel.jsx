@@ -1,37 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
-import { analyzeJobCardImageQueued } from '../services/documentIntelligence';
 import { createJob, uploadImage } from '../services/storage';
 import { loadOcrFieldConfig } from '../services/ocrFieldConfig';
 import { matchTechnicians } from '../services/techMatcher';
 import {
   getStagedDocs,
   subscribeStagedDocs,
-  addStagedDocs,
   updateStagedDoc,
   removeStagedDoc as removeStagedDocFromStore,
 } from '../services/stagedDocs';
 
-const ENDPOINT_KEY = 'tidewell.ocr.endpoint';
-const API_KEY_KEY = 'tidewell.ocr.key';
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
-
-function readLocal(key) {
-  try { return localStorage.getItem(key) || ''; } catch { return ''; }
-}
-
-function makeId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(new Error('Could not read selected file.'));
-    reader.readAsDataURL(file);
-  });
-}
 
 function dataUrlToBlob(dataUrl) {
   const parts = String(dataUrl || '').split(',');
@@ -153,12 +132,10 @@ function StagedPreview({ doc }) {
 export default function OcrExtractionPanel({ job, onCreated }) {
   const [stagedDocs, setStagedDocs] = useState(getStagedDocs);
   const [selectedDocId, setSelectedDocId] = useState(null);
-  const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [isReviewFullscreen, setIsReviewFullscreen] = useState(false);
-  const [fileInputKey, setFileInputKey] = useState(0);
 
   /* The staged-docs store is shared with the dashboard's background OCR
      queue — docs it finishes appear here as 'ready' while this tab is open. */
@@ -229,113 +206,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
         [fieldKey]: value,
       },
     });
-  }
-
-  async function stageFiles(fileList) {
-    const files = Array.from(fileList || []);
-    if (!files.length) return;
-
-    setError('');
-    setSaveMessage('');
-
-    const prepared = [];
-    for (const source of files) {
-      const dataUrl = await fileToDataUrl(source);
-      prepared.push({
-        id: makeId(),
-        fileName: source.name || 'Scanned document',
-        mimeType: source.type || 'application/octet-stream',
-        size: source.size || 0,
-        dataUrl,
-        status: 'staged',
-        error: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        result: null,
-        editedValues: {},
-        importedJobRef: '',
-      });
-    }
-
-    addStagedDocs(prepared);
-    setSelectedDocId(prepared[0]?.id || null);
-    setSaveMessage(`Staged ${prepared.length} document${prepared.length === 1 ? '' : 's'} for OCR.`);
-    setFileInputKey((value) => value + 1);
-  }
-
-  async function runStagedExtraction() {
-    setError('');
-    setSaveMessage('');
-
-    const endpoint = readLocal(ENDPOINT_KEY);
-    const apiKey   = readLocal(API_KEY_KEY);
-
-    if (!endpoint || !apiKey) {
-      setError('Azure OCR endpoint and API key are not configured. Open Settings (gear icon) to add them.');
-      return;
-    }
-
-    const candidates = stagedDocs.filter(
-      (item) => item.status === 'staged' || item.status === 'error'
-    );
-    if (!candidates.length) {
-      setError('No staged files are waiting for OCR. Stage files first.');
-      return;
-    }
-
-    setBusy(true);
-
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const item of candidates) {
-      updateDoc(item.id, {
-        status: 'processing',
-        error: '',
-      });
-
-      try {
-        const blob = dataUrlToBlob(item.dataUrl);
-        const file = new File([blob], item.fileName, { type: item.mimeType });
-        const fieldConfig = loadOcrFieldConfig();
-        const data = await analyzeJobCardImageQueued({
-          endpoint,
-          apiKey,
-          file,
-          fieldConfig,
-          onWait: (delayMs) => setSaveMessage(
-            `Azure rate limit reached — ${item.fileName} retries automatically in ${Math.ceil(delayMs / 1000)}s. Nothing is lost.`
-          ),
-        });
-        const nextEditedValues = Object.fromEntries(
-          Object.entries(data?.parsed?.fields || {}).map(([key, field]) => [key, field.value || ''])
-        );
-
-        updateDoc(item.id, {
-          status: 'ready',
-          error: '',
-          result: data,
-          editedValues: nextEditedValues,
-        });
-        successCount += 1;
-      } catch (err) {
-        updateDoc(item.id, {
-          status: 'error',
-          error: err?.message || 'Failed to extract text from image.',
-        });
-        errorCount += 1;
-      }
-    }
-
-    setBusy(false);
-    const firstReady = stagedDocs.find((item) => item.status === 'ready');
-    if (!selectedDocId && firstReady) {
-      setSelectedDocId(firstReady.id);
-    }
-
-    setSaveMessage(
-      `OCR run complete. Ready: ${successCount}. Failed: ${errorCount}. Review ready files below.`
-    );
   }
 
   function removeStagedDoc(docId) {
@@ -524,54 +394,8 @@ export default function OcrExtractionPanel({ job, onCreated }) {
       </div>
 
       <div className="ocr-body">
-        <label
-          className="tw-drop"
-          style={{ cursor: 'pointer', display: 'block' }}
-          onDrop={async (e) => { e.preventDefault(); try { await stageFiles(e.dataTransfer.files); } catch (err) { setError(err?.message || 'Could not stage files.'); } }}
-          onDragOver={(e) => e.preventDefault()}
-        >
-          <div className="ic">
-            <Icon name="file" size={26} />
-          </div>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Drop job card scan here or click to browse</div>
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)' }}>JPG · PNG · PDF</div>
-          <input
-            key={fileInputKey}
-            type="file"
-            accept="image/*,application/pdf"
-            multiple
-            style={{ display: 'none' }}
-            onChange={async (e) => {
-              try {
-                await stageFiles(e.target.files);
-              } catch (err) {
-                setError(err?.message || 'Could not stage selected files.');
-              }
-            }}
-          />
-        </label>
-
-        <div className="ocr-upload-row">
-          <button
-            className="tw-btn tw-btn--primary"
-            disabled={busy || !stagedDocs.length}
-            onClick={runStagedExtraction}
-          >
-            {busy ? (
-              <>
-                <Icon name="sync" size={16} className="spin" />
-                <span>Running OCR...</span>
-              </>
-            ) : (
-              <>
-                <Icon name="refresh" size={16} />
-                <span>Run OCR for staged files</span>
-              </>
-            )}
-          </button>
-
-        </div>
-
+        {/* Uploading + running OCR happens on the Dashboard; this tab goes
+            straight to reviewing what the background queue has processed. */}
         <div className="ocr-summary-row">
           <div className="ocr-chip">
             <span>Staged</span>
@@ -596,7 +420,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           {!stagedDocs.length ? (
             <div className="tw-empty">
               <Icon name="file" size={30} />
-              <p style={{ marginTop: 10, fontWeight: 600 }}>Stage scanned files to build a review queue.</p>
+              <p style={{ marginTop: 10, fontWeight: 600 }}>No documents waiting for review — upload job card scans on the Dashboard.</p>
             </div>
           ) : (
             <div className="tw-card" style={{ overflow: 'hidden' }}>
@@ -646,7 +470,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                           <button
                             className="tw-btn tw-btn--sm tw-btn--ghost"
                             type="button"
-                            disabled={busy || saving}
+                            disabled={saving}
                             onClick={() => removeStagedDoc(item.id)}
                           >
                             Remove

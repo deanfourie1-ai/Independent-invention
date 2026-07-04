@@ -4,22 +4,19 @@ import { enqueueOcrFiles, getOcrQueue, subscribeOcrQueue, clearFinishedOcr } fro
 import { getOcrUsage, subscribeOcrUsage, FREE_TIER_PAGES, WARN_AT_PAGES } from '../services/ocrUsage';
 import { getStagedDocs, subscribeStagedDocs } from '../services/stagedDocs';
 import { subscribeJobsChanged } from '../services/storage';
+import { MONTHS as MON, fmtDateTime as fmtDate } from '../services/dates';
 
 /* One-shot hint read by AdminApp so "open OCR tab" lands on the right tab. */
 export const ADMIN_TAB_HINT_KEY = 'tidewell.admin.openTab';
 
-const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function fmtDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}, ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
 function fmtTime(d) {
   const p = (n) => String(n).padStart(2, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-function fmtR(n) { return 'R ' + Number(n || 0).toLocaleString('en-ZA'); }
+function fmtR(n) {
+  const v = Math.round(Number(n || 0) * 100) / 100;
+  return 'R ' + v.toLocaleString('en-ZA', Number.isInteger(v) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 const DID_LABEL = {
   call: 'Called', whatsapp: 'WhatsApp', email: 'Emailed', visit: 'Visited', note: 'Note',
@@ -236,7 +233,7 @@ export default function DashboardPanel({ workspaceSwitch, onNavigate }) {
               {/* stat cards */}
               <div className="db-grid">
                 <StatCard
-                  icon="clipboard" label="In capture queue"
+                  icon="clipboard" label="Awaiting PO's"
                   value={data.pendingCapture}
                   note={data.capturedToday > 0 ? `${data.capturedToday} captured today` : 'Jobs awaiting recapture'}
                   tone={data.pendingCapture > 5 ? 'amber' : data.pendingCapture > 0 ? 'brand' : 'green'}

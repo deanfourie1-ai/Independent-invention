@@ -34,36 +34,26 @@ const DEFAULT_TECHNICIANS = [
   { id: 't8', name: 'Steyn' },
 ];
 
-/* ── Jobs store ─────────────────────────────────────────── */
-function readJobs() {
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8')); } catch { return []; }
+/* ── JSON file stores ───────────────────────────────────── */
+function readJsonFile(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return fallback; }
 }
-function writeJobs(jobs) {
+function writeJsonFile(file, data) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(jobs, null, 2), 'utf-8');
+  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-/* ── OneDrive config store ──────────────────────────────── */
-function readOneDriveConfig() {
-  try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')); } catch { return null; }
-}
-function writeOneDriveConfig(config) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
-}
+const readJobs  = () => readJsonFile(DATA_FILE, []);
+const writeJobs = (jobs) => writeJsonFile(DATA_FILE, jobs);
+
+const readOneDriveConfig  = () => readJsonFile(CONFIG_FILE, null);
+const writeOneDriveConfig = (config) => writeJsonFile(CONFIG_FILE, config);
 function isOneDriveReady(cfg) {
   return !!(cfg?.tenantId && cfg?.clientId && cfg?.clientSecret && cfg?.userId);
 }
 
-/* ── Technicians store ──────────────────────────────────── */
-function readTechnicians() {
-  try { return JSON.parse(fs.readFileSync(TECHS_FILE, 'utf-8')); }
-  catch { return DEFAULT_TECHNICIANS; }
-}
-function writeTechnicians(list) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(TECHS_FILE, JSON.stringify(list, null, 2), 'utf-8');
-}
+const readTechnicians  = () => readJsonFile(TECHS_FILE, DEFAULT_TECHNICIANS);
+const writeTechnicians = (list) => writeJsonFile(TECHS_FILE, list);
 
 /* ── Customer follow-ups store (customers + interactions) ──
    Seeded on first run so the screen isn't empty; once the file
@@ -102,13 +92,6 @@ const DEFAULT_INTERACTIONS = [
     said: 'INV-0802 raised and added to the account — flagged to chase with the older balance.', followUpIso: null, followUpTime: null },
 ];
 
-function readJsonFile(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return fallback; }
-}
-function writeJsonFile(file, data) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
-}
 /* Sample data is only for development. The packaged .exe ships clean so the
    client opens to an empty follow-up log + customer list, ready for their
    first "Upload Excel list". */
@@ -145,12 +128,14 @@ async function getGraphToken(cfg) {
 function invalidateTokenCache() { _tok = { token: null, expiresAt: 0 }; }
 
 /* ── OneDrive upload ────────────────────────────────────── */
+const safeUploadName = (fileName) => `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+const graphContentUrl = (userId, folder, name) =>
+  `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(userId)}/drive/root:/${folder}/${name}:/content`;
+
 async function uploadToOneDrive(cfg, buffer, fileName, mimeType) {
-  const token    = await getGraphToken(cfg);
-  const folder   = (cfg.folder || 'tidewell-scans').replace(/^\/|\/$/g, '');
-  const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  const userRef  = encodeURIComponent(cfg.userId);
-  const url = `https://graph.microsoft.com/v1.0/users/${userRef}/drive/root:/${folder}/${safeName}:/content`;
+  const token  = await getGraphToken(cfg);
+  const folder = (cfg.folder || 'tidewell-scans').replace(/^\/|\/$/g, '');
+  const url    = graphContentUrl(cfg.userId, folder, safeUploadName(fileName));
 
   const res = await fetch(url, {
     method:  'PUT',
@@ -167,6 +152,10 @@ async function uploadToOneDrive(cfg, buffer, fileName, mimeType) {
 
 /* ── Templates store ────────────────────────────────────── */
 const TEMPLATES_FILE = path.join(DATA_DIR, 'templates.json');
+
+/* One-deep snapshot taken before each follow-ups import is applied,
+   so the whole import can be undone (wrong / stale file protection). */
+const IMPORT_BACKUP_FILE = path.join(DATA_DIR, 'followups-import-backup.json');
 
 /* ── Backup ─────────────────────────────────────────────── */
 const BACKUP_LOG_FILE = path.join(DATA_DIR, 'backup-log.json');
@@ -195,13 +184,12 @@ async function runBackup() {
     if (useOneDrive) {
       destination = 'onedrive';
       folder      = `Jobtool Backups/${stamp}`;
-      const token   = await getGraphToken(cfg);
-      const userRef = encodeURIComponent(cfg.userId);
+      const token = await getGraphToken(cfg);
 
       for (const f of BACKUP_FILES) {
         if (!fs.existsSync(f.src)) continue;
         const buf = fs.readFileSync(f.src);
-        const url = `https://graph.microsoft.com/v1.0/users/${userRef}/drive/root:/${folder}/${f.name}:/content`;
+        const url = graphContentUrl(cfg.userId, folder, f.name);
         const res = await fetch(url, {
           method:  'PUT',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -352,7 +340,7 @@ export async function handleRequest(req, res, next) {
       }
 
       fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-      const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const safeName = safeUploadName(fileName);
       const filePath = path.join(UPLOADS_DIR, safeName);
       fs.writeFileSync(filePath, buffer);
       return send(res, 200, { filePath: `uploads/${safeName}` });
@@ -471,6 +459,40 @@ export async function handleRequest(req, res, next) {
       }
     }
 
+    /* ── follow-ups import: atomic apply + undo ───────── */
+    if (resource === 'followups') {
+      if (id === 'import' && method === 'POST') {
+        const body = await collectBody(req);
+        if (!body || !Array.isArray(body.customers) || !Array.isArray(body.interactions)) {
+          return send(res, 400, { error: 'Expected { customers: [], interactions: [] }' });
+        }
+        writeJsonFile(IMPORT_BACKUP_FILE, {
+          at:           new Date().toISOString(),
+          customers:    readCustomers(),
+          interactions: readInteractions(),
+        });
+        // Interactions list is newest-first; batch entries go on top.
+        writeJsonFile(INTERACTIONS_FILE, [...body.interactions, ...readInteractions()]);
+        writeJsonFile(CUSTOMERS_FILE, body.customers);
+        return send(res, 200, { ok: true });
+      }
+
+      if (id === 'undo-import' && method === 'POST') {
+        const snap = readJsonFile(IMPORT_BACKUP_FILE, null);
+        if (!snap) return send(res, 409, { error: 'No import to undo' });
+        writeJsonFile(CUSTOMERS_FILE, snap.customers || []);
+        writeJsonFile(INTERACTIONS_FILE, snap.interactions || []);
+        try { fs.unlinkSync(IMPORT_BACKUP_FILE); } catch {}
+        return send(res, 200, { ok: true });
+      }
+
+      if (id === 'import-undo-status' && method === 'GET') {
+        const snap = readJsonFile(IMPORT_BACKUP_FILE, null);
+        if (snap) return send(res, 200, { available: true, at: snap.at || null });
+        return send(res, 200, { available: false, at: null });
+      }
+    }
+
     /* ── interactions (follow-ups log) ────────────────── */
     if (resource === 'interactions') {
       if (method === 'GET' && !id) return send(res, 200, readInteractions());
@@ -486,18 +508,13 @@ export async function handleRequest(req, res, next) {
 
     /* ── backup status ───────────────────────────────────── */
     if (resource === 'backup-status' && method === 'GET') {
-      try {
-        return send(res, 200, JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')));
-      } catch {
-        return send(res, 200, { ok: null, at: null });
-      }
+      return send(res, 200, readJsonFile(BACKUP_LOG_FILE, { ok: null, at: null }));
     }
 
     /* ── templates ───────────────────────────────────────── */
     if (resource === 'templates') {
       if (method === 'GET') {
-        try { return send(res, 200, JSON.parse(fs.readFileSync(TEMPLATES_FILE, 'utf-8'))); }
-        catch { return send(res, 200, []); }
+        return send(res, 200, readJsonFile(TEMPLATES_FILE, []));
       }
       if (method === 'PUT') {
         const body = await collectBody(req);
@@ -562,8 +579,7 @@ export async function handleRequest(req, res, next) {
       }
       const recentActivity = feed.sort((a, b) => b.ts - a.ts).slice(0, 10);
 
-      let lastBackup = null;
-      try { lastBackup = JSON.parse(fs.readFileSync(BACKUP_LOG_FILE, 'utf-8')); } catch {}
+      const lastBackup = readJsonFile(BACKUP_LOG_FILE, null);
 
       return send(res, 200, { pendingCapture, capturedToday, totalOutstanding, overdueCount, needsFirst, openFollowups, recentActivity, lastBackup });
     }

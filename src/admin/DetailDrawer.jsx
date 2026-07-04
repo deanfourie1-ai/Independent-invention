@@ -1,5 +1,5 @@
 import Icon from '../components/Icon';
-import { technicians, fmtDate } from '../data';
+import { fmtDate } from '../services/dates';
 
 function fmtR(n) {
   const num = parseFloat(String(n || '').replace(/[^0-9.]/g, ''));
@@ -31,7 +31,7 @@ export default function DetailDrawer({ row, onClose }) {
 
   const TECH_TONES = { t1: 'blue', t2: 'green', t3: 'amber', t4: 'violet', t5: 'green' };
   const DOT_TONES  = ['blue', 'green', 'amber', 'violet'];
-  const rawAssigned = j.jobAssignedTo || technicians[j.tech]?.name || '';
+  const rawAssigned = j.jobAssignedTo || '';
   const assignedNames = rawAssigned.split(/\s*,\s*/).filter(Boolean).slice(0, 3);
 
   const customer = j.customer?.name || '—';

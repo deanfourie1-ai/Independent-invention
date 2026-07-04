@@ -1,3 +1,6 @@
+import { MONTHS as MON } from '../../services/dates';
+import { S } from './helpers';
+
 export const DEFAULT_TEMPLATES = [
   {
     id: 'tpl-first',
@@ -36,7 +39,6 @@ export const DEFAULT_TEMPLATES = [
   },
 ];
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function todayDisp() {
   const d = new Date();
   return `${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
@@ -44,7 +46,7 @@ function todayDisp() {
 
 export function fillTemplate(body, customer, owedAmount, openInvoices, oldestDays) {
   const contact = (customer.contact && customer.contact !== '—') ? customer.contact : customer.name;
-  const amount = 'R ' + Number(owedAmount || 0).toLocaleString('en-ZA');
+  const amount = 'R ' + S.fmtAmount(owedAmount);
   const invoices = (openInvoices || []).map((i) => i.no).join(', ') || '—';
   return body
     .replace(/\{name\}/g, customer.name || '')

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import Icon from '../components/Icon';
-import { technicians, fmtDate } from '../data';
+import { fmtDate } from '../services/dates';
 
 const TECH_TONES = { t1: 'blue', t2: 'green', t3: 'amber', t4: 'violet', t5: 'green' };
 
@@ -26,7 +26,7 @@ function StatusChip({ job }) {
 const DOT_TONES = ['blue', 'green', 'amber', 'violet'];
 
 function Avatar({ job }) {
-  const raw = job.jobAssignedTo || technicians[job.tech]?.name || '';
+  const raw = job.jobAssignedTo || '';
   if (!raw) return <span className="tw-muted">—</span>;
   const names = raw.split(/\s*,\s*/).filter(Boolean).slice(0, 3);
   return (
@@ -110,7 +110,7 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
         'Address': job.customer?.address || '',
         'Phone': job.customer?.phone || '',
         'Job type': job.jobType || '',
-        'Assigned to': technicians[job.tech]?.name || job.jobAssignedTo || '',
+        'Assigned to': job.jobAssignedTo || '',
         'Call-out fee': job.charges?.callOutFee || '',
         'Labour': job.charges?.labour || '',
         'Material & other costs': job.charges?.materialsOther || '',

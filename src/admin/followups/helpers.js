@@ -2,7 +2,8 @@
    status. Ported from the design prototype's simple-data.js. A movable "today"
    (set at the top of each render) drives the day roll-forward mechanism. */
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+import { MONTHS as MON } from '../../services/dates';
+
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
@@ -23,9 +24,17 @@ const fuRelative = (iso) => {
   return `in ${n} days`;
 };
 
-const fmtR = (n) => 'R ' + Number(n || 0).toLocaleString('en-ZA');
+// Round to cents — kills float noise when summing decimal amounts.
+const round2 = (n) => Math.round(n * 100) / 100;
+// Whole-rand amounts stay compact (R 23 800); cent amounts always show both
+// decimals (R 1 234,56) so imported values round-trip visibly.
+const fmtAmount = (n) => {
+  const v = round2(Number(n || 0));
+  return v.toLocaleString('en-ZA', Number.isInteger(v) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtR = (n) => 'R ' + fmtAmount(n);
 // owed = manual override if set, else the sum of invoices not yet marked paid
-const owed = (c) => (typeof c.outstanding === 'number' ? c.outstanding : (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0));
+const owed = (c) => round2(typeof c.outstanding === 'number' ? c.outstanding : (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0));
 // Live days: prefers stored invoice date; falls back to importedDays + elapsed since importedAt; else stored snapshot.
 const invDays = (iv) => {
   if (iv.invoiceDate) return Math.max(0, daysBetween(iv.invoiceDate, CURRENT));
@@ -34,12 +43,12 @@ const invDays = (iv) => {
 };
 const oldestDays = (c) => (c.invoices || []).reduce((m, i) => (i.paid ? m : Math.max(m, invDays(i))), 0);
 const openInvoices = (c) => (c.invoices || []).filter((i) => !i.paid);
-const sumUnpaid = (c, paidMap) => (c.invoices || []).reduce((s, i) => s + ((paidMap && paidMap[i.no]) || i.paid ? 0 : i.amount), 0);
+const sumUnpaid = (c, paidMap) => round2((c.invoices || []).reduce((s, i) => s + ((paidMap && paidMap[i.no]) || i.paid ? 0 : i.amount), 0));
 
 export const S = {
   TODAY_ISO,
   get today() { return CURRENT; },
   setToday(iso) { CURRENT = iso; },
   isoToDisp, isoToDow, addDaysIso, daysBetween, fuStatus, fuRelative,
-  fmtR, owed, invDays, oldestDays, openInvoices, sumUnpaid,
+  fmtR, fmtAmount, owed, invDays, oldestDays, openInvoices, sumUnpaid,
 };

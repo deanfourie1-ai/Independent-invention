@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import Icon from '../components/Icon';
-import { technicians } from '../data';
 
 const TECH_TONES = { t1: 'blue', t2: 'green', t3: 'amber', t4: 'violet', t5: 'green' };
 
@@ -18,7 +17,10 @@ function matchesSearch(job, query) {
 }
 
 function QueueItem({ job, rec, tasks, selected, onClick, onDelete, showChecklist = true }) {
-  const tech = technicians[job.tech] || { initials: '??' };
+  const firstAssigned = (job.jobAssignedTo || '').split(/\s*,\s*/).filter(Boolean)[0] || '';
+  const initials = firstAssigned
+    ? firstAssigned.split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+    : '??';
   const tone = TECH_TONES[job.tech] || 'blue';
   const active = tasks.filter((t) => t.text.trim());
   const total = active.length;
@@ -26,7 +28,7 @@ function QueueItem({ job, rec, tasks, selected, onClick, onDelete, showChecklist
   const complete = total > 0 && done === total;
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="wl-row-wrap">
       <div
         className={'cap-qitem' + (selected ? ' is-active' : '')}
         onClick={onClick}
@@ -39,7 +41,7 @@ function QueueItem({ job, rec, tasks, selected, onClick, onDelete, showChecklist
           className={`dot tone-${tone}`}
           style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}
         >
-          {tech.initials}
+          {initials}
         </span>
         <div className="meta">
           <div className="nm">{job.customer.name}</div>
