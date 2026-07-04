@@ -9,6 +9,7 @@ import {
   updateStagedDoc,
   removeStagedDoc as removeStagedDocFromStore,
 } from '../services/stagedDocs';
+import { buildOcrSnapshot } from '../services/ocrAccuracy';
 
 const LOW_CONFIDENCE_THRESHOLD = 0.65;
 
@@ -365,6 +366,9 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           averageWordConfidence: result.averageWordConfidence,
           extractedFields: fields,
           extractedStatus: parsedStatus,
+          // Raw OCR values before any admin edits — the accuracy report
+          // compares these against the job's final values.
+          snapshot: buildOcrSnapshot(parsedFields),
         },
       });
 

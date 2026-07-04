@@ -34,14 +34,40 @@ function normalizePolygon(polygon) {
   return points;
 }
 
-function normalizeAnalyzeResult(analyzeResult) {
+function normalizeSpans(spans) {
+  return (Array.isArray(spans) ? spans : [])
+    .filter((s) => Number.isFinite(s?.offset) && Number.isFinite(s?.length))
+    .map((s) => ({ offset: s.offset, length: s.length }));
+}
+
+function spanOverlaps(span, ranges) {
+  if (!span) return false;
+  const start = span.offset;
+  const end = span.offset + span.length;
+  return ranges.some((r) => start < r.offset + r.length && end > r.offset);
+}
+
+export function normalizeAnalyzeResult(analyzeResult) {
   const pages = Array.isArray(analyzeResult?.pages) ? analyzeResult.pages : [];
   const sourcePairs = Array.isArray(analyzeResult?.keyValuePairs)
     ? analyzeResult.keyValuePairs
     : [];
 
+  const styles = (Array.isArray(analyzeResult?.styles) ? analyzeResult.styles : []).map(
+    (style, idx) => ({
+      id: `st-${idx + 1}`,
+      isHandwritten: Boolean(style?.isHandwritten),
+      confidence: Number.isFinite(style?.confidence) ? style.confidence : null,
+      spans: normalizeSpans(style?.spans),
+    })
+  );
+  const handwrittenRanges = styles
+    .filter((s) => s.isHandwritten)
+    .flatMap((s) => s.spans);
+
   const lines = [];
   const words = [];
+  const selectionMarks = [];
 
   pages.forEach((page) => {
     const pageNumber = page?.pageNumber ?? null;
@@ -57,12 +83,27 @@ function normalizeAnalyzeResult(analyzeResult) {
     });
 
     (page?.words || []).forEach((word, wordIndex) => {
+      const span = Number.isFinite(word?.span?.offset) && Number.isFinite(word?.span?.length)
+        ? { offset: word.span.offset, length: word.span.length }
+        : null;
       words.push({
         id: `p${pageNumber}-w${wordIndex + 1}`,
         pageNumber,
         content: word?.content || '',
         confidence: Number.isFinite(word?.confidence) ? word.confidence : null,
         boundingPolygon: normalizePolygon(word?.polygon),
+        span,
+        isHandwritten: spanOverlaps(span, handwrittenRanges),
+      });
+    });
+
+    (page?.selectionMarks || []).forEach((mark, markIndex) => {
+      selectionMarks.push({
+        id: `p${pageNumber}-sm${markIndex + 1}`,
+        pageNumber,
+        state: mark?.state || 'unselected',
+        confidence: Number.isFinite(mark?.confidence) ? mark.confidence : null,
+        boundingPolygon: normalizePolygon(mark?.polygon),
       });
     });
   });
@@ -74,11 +115,29 @@ function normalizeAnalyzeResult(analyzeResult) {
     confidence: Number.isFinite(pair?.confidence) ? pair.confidence : null,
   }));
 
+  const tables = (Array.isArray(analyzeResult?.tables) ? analyzeResult.tables : []).map(
+    (table, tableIndex) => ({
+      id: `tbl-${tableIndex + 1}`,
+      pageNumber: table?.boundingRegions?.[0]?.pageNumber ?? null,
+      rowCount: Number(table?.rowCount) || 0,
+      columnCount: Number(table?.columnCount) || 0,
+      cells: (Array.isArray(table?.cells) ? table.cells : []).map((cell) => ({
+        kind: cell?.kind || 'content',
+        rowIndex: Number(cell?.rowIndex) || 0,
+        columnIndex: Number(cell?.columnIndex) || 0,
+        content: String(cell?.content || '').trim(),
+      })),
+    })
+  );
+
   return {
     content: analyzeResult?.content || '',
     lines,
     words,
     keyValuePairs,
+    tables,
+    selectionMarks,
+    styles,
     averageWordConfidence:
       words.length > 0
         ? words.reduce((acc, w) => acc + (w.confidence ?? 0), 0) / words.length

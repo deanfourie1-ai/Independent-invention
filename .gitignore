@@ -3,9 +3,10 @@ dist/
 .DS_Store
 *.local
 
-# Local runtime data — not source code
-data/
-uploads/
+# Local runtime data — not source code (anchored to repo root:
+# an unanchored "data/" also ignored src/data/, which cost us that module)
+/data/
+/uploads/
 
 # Build intermediates
 server.cjs
