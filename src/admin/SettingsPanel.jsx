@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Icon from '../components/Icon';
 import {
   loadOcrFieldConfig,
@@ -6,6 +6,7 @@ import {
   resetOcrFieldConfig,
   loadBethlehemOcrFieldConfig,
 } from '../services/ocrFieldConfig';
+import { buildOcrAccuracyReport } from '../services/ocrAccuracy';
 
 const OCR_ENDPOINT_KEY = 'tidewell.ocr.endpoint';
 const OCR_API_KEY_KEY  = 'tidewell.ocr.key';
@@ -36,6 +37,18 @@ function fmtBytes(bytes) {
   const gb = bytes / (1024 ** 3);
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   return `${Math.round(bytes / (1024 ** 2))} MB`;
+}
+
+function fmtPct(value) {
+  if (!Number.isFinite(value)) return '—';
+  return `${Math.round(value * 100)}%`;
+}
+
+function accuracyTone(value) {
+  if (!Number.isFinite(value)) return 'var(--ink-3)';
+  if (value >= 0.9) return 'var(--success, #27ae60)';
+  if (value >= 0.7) return 'var(--warning, #e67e22)';
+  return 'var(--danger, #c0392b)';
 }
 
 /* ── shared feedback row ── */
@@ -91,6 +104,10 @@ export default function SettingsPanel({ onBack }) {
   /* ── Backup status state ── */
   const [backupStatus, setBackupStatus] = useState(null);
 
+  /* ── OCR accuracy state ── */
+  const [accuracyJobs, setAccuracyJobs] = useState(null);
+  const [accuracyErr, setAccuracyErr]   = useState('');
+
   /* ── Technicians state ── */
   const [techs, setTechs]             = useState([]);
   const [techsLoading, setTechsLoading] = useState(true);
@@ -125,6 +142,14 @@ export default function SettingsPanel({ onBack }) {
       })
       .catch(() => {})
       .finally(() => setOdLoading(false));
+  }, []);
+
+  /* ── load jobs for the OCR accuracy report on mount ── */
+  useEffect(() => {
+    fetch('/api/jobs')
+      .then(r => { if (!r.ok) throw new Error('Could not load jobs.'); return r.json(); })
+      .then(data => setAccuracyJobs(Array.isArray(data) ? data : []))
+      .catch(() => setAccuracyErr('Could not load jobs — accuracy report unavailable.'));
   }, []);
 
   /* ── load technicians on mount ── */
@@ -243,6 +268,11 @@ export default function SettingsPanel({ onBack }) {
     setFieldConfig(loadBethlehemOcrFieldConfig());
     setFieldSaveOk(false);
   }
+
+  const accuracyReport = useMemo(
+    () => (accuracyJobs ? buildOcrAccuracyReport(accuracyJobs, { technicians: techs }) : null),
+    [accuracyJobs, techs]
+  );
 
   const odFullyConfigured =
     odForm.tenantId && odForm.clientId && (odForm.clientSecret || secretConfigured) && odForm.userId;
@@ -507,6 +537,76 @@ export default function SettingsPanel({ onBack }) {
                 >
                   {techSaving ? 'Saving…' : 'Save technicians'}
                 </button>
+              </div>
+            </>
+          )}
+        </SectionCard>
+
+        {/* ── OCR accuracy section ── */}
+        <SectionCard
+          title="OCR accuracy"
+          subtitle="How often each OCR-extracted field survives review unchanged, compared against the final values on the job cards. Use the weakest fields to guide the field-mapping patterns below."
+        >
+          {accuracyErr ? (
+            <Alert ok={false} message={accuracyErr} />
+          ) : accuracyReport === null ? (
+            <div className="tw-muted" style={{ fontSize: 13 }}>Loading accuracy data…</div>
+          ) : accuracyReport.jobCount === 0 ? (
+            <div className="tw-muted" style={{ fontSize: 13 }}>
+              No accuracy data yet. From now on, every capture record created from OCR stores the
+              raw extracted values, and this report fills in as jobs are imported and reviewed.
+            </div>
+          ) : (
+            <>
+              <div className="tw-muted" style={{ fontSize: 13 }}>
+                Based on <b>{accuracyReport.jobCount}</b> OCR-imported job
+                {accuracyReport.jobCount === 1 ? '' : 's'}
+                {accuracyReport.since ? ` since ${fmtBackupDate(accuracyReport.since)}` : ''}.
+                Fields empty on both the scan and the job card are excluded.
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="tw-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Sampled</th>
+                      <th>Accepted unchanged</th>
+                      <th>Corrected</th>
+                      <th>Missed by OCR</th>
+                      <th>Avg OCR confidence</th>
+                      <th style={{ minWidth: 140 }}>Accuracy</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accuracyReport.rows.map((row) => (
+                      <tr key={row.key}>
+                        <td style={{ fontWeight: 600 }}>{row.label}</td>
+                        <td>{row.sampled}</td>
+                        <td>{row.accepted}</td>
+                        <td>{row.corrected}</td>
+                        <td>{row.missed}</td>
+                        <td>{fmtPct(row.avgConfidence)}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--surface-3, #eee)', overflow: 'hidden' }}>
+                              <div
+                                style={{
+                                  width: Number.isFinite(row.accuracy) ? `${Math.round(row.accuracy * 100)}%` : 0,
+                                  height: '100%',
+                                  borderRadius: 3,
+                                  background: accuracyTone(row.accuracy),
+                                }}
+                              />
+                            </div>
+                            <span style={{ fontWeight: 700, fontSize: 12, minWidth: 34, textAlign: 'right', color: accuracyTone(row.accuracy) }}>
+                              {fmtPct(row.accuracy)}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </>
           )}

@@ -1,5 +1,9 @@
 const FIELD_CONFIDENCE_FALLBACK = 0.5;
 
+/* A fully handwritten value loses this share of its confidence (prebuilt-layout
+   reads handwriting notably worse than print, but reports similar confidence). */
+const HANDWRITING_DISCOUNT = 0.2;
+
 function normalizeText(value) {
   return (value || '').toString().trim();
 }
@@ -16,12 +20,15 @@ function average(nums) {
   return nums.reduce((acc, n) => acc + n, 0) / nums.length;
 }
 
-function confidenceForValue(value, words) {
-  const tokenSet = normalizeText(value)
+function valueTokens(value) {
+  return normalizeText(value)
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((t) => t.length > 1);
+}
 
+function confidenceForValue(value, words) {
+  const tokenSet = valueTokens(value);
   if (!tokenSet.length) return null;
 
   const matched = words
@@ -31,6 +38,17 @@ function confidenceForValue(value, words) {
 
   if (!matched.length) return FIELD_CONFIDENCE_FALLBACK;
   return average(matched);
+}
+
+/* Fraction (0–1) of a value's matched words that layout flagged as
+   handwritten. 0 when the value can't be located among the words. */
+function handwritingShareForValue(value, words) {
+  const tokenSet = valueTokens(value);
+  if (!tokenSet.length) return 0;
+
+  const matched = words.filter((w) => tokenSet.includes((w.content || '').toLowerCase()));
+  if (!matched.length) return 0;
+  return matched.filter((w) => w.isHandwritten).length / matched.length;
 }
 
 function extractLabeledValue(fullText, labels) {
@@ -165,11 +183,62 @@ function extractFromKeyValuePairs(pairs, keyMatchers) {
   return { value: '', confidence: null };
 }
 
+/* Reads a money field from the layout tables: finds a row whose label cell
+   matches the field's keyMatchers and returns the first digit-bearing cell to
+   its right. Positional cells beat key-value guessing for the cost block. */
+function extractMoneyFromTables(tables, keyMatchers) {
+  const matchers = (Array.isArray(keyMatchers) ? keyMatchers : [])
+    .map(toRegex)
+    .filter(Boolean);
+  if (!matchers.length) return { value: '' };
+
+  for (const table of Array.isArray(tables) ? tables : []) {
+    const rows = new Map();
+    for (const cell of table?.cells || []) {
+      if (!rows.has(cell.rowIndex)) rows.set(cell.rowIndex, []);
+      rows.get(cell.rowIndex).push(cell);
+    }
+
+    for (const cells of rows.values()) {
+      cells.sort((a, b) => a.columnIndex - b.columnIndex);
+      const labelIndex = cells.findIndex((c) => normalizeText(c.content));
+      if (labelIndex === -1) continue;
+
+      const label = normalizeText(cells[labelIndex].content).toLowerCase();
+      if (!matchers.some((rx) => rx.test(label))) continue;
+
+      for (let i = labelIndex + 1; i < cells.length; i += 1) {
+        const candidate = normalizeText(cells[i].content);
+        if (candidate && /\d/.test(candidate)) return { value: candidate };
+      }
+    }
+  }
+
+  return { value: '' };
+}
+
+/* Money fields prefer the table cell, then the key-value pair, then the
+   regex fallback. A key-value pair's confidence only applies to its own
+   value, so a table win recomputes confidence from the matched words. */
+function moneyField(tableResult, kvResult, regexValue, words) {
+  const value = tableResult.value || kvResult.value || regexValue;
+  const confidence = tableResult.value
+    ? confidenceForValue(value, words)
+    : kvResult.confidence ?? confidenceForValue(value, words);
+  return {
+    value,
+    confidence,
+    found: Boolean(value),
+    source: tableResult.value ? 'table' : kvResult.value ? 'keyValue' : value ? 'text' : 'none',
+  };
+}
+
 export function parseJobCardText(readResult, fieldConfig = {}) {
   const content = normalizeText(readResult?.content);
   const lines = splitLines(content);
   const words = Array.isArray(readResult?.words) ? readResult.words : [];
   const keyValuePairs = Array.isArray(readResult?.keyValuePairs) ? readResult.keyValuePairs : [];
+  const tables = Array.isArray(readResult?.tables) ? readResult.tables : [];
   const dateLine = lines.find((line) => /\bdate\b\s*:/i.test(line)) || '';
   const completedLine = lines.find((line) => /\bcompleted\b\s*:/i.test(line)) || '';
   const completedIndex = lines.findIndex((line) => /\bcompleted\b\s*:/i.test(line));
@@ -190,6 +259,12 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
   const kvLabour = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.labour?.keyMatchers);
   const kvMaterialsOther = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.materialsOther?.keyMatchers);
   const kvTotal = extractFromKeyValuePairs(keyValuePairs, fieldConfig?.total?.keyMatchers);
+
+  const tblMaterialsUsed = extractMoneyFromTables(tables, fieldConfig?.materialsUsed?.keyMatchers);
+  const tblCallOutFee = extractMoneyFromTables(tables, fieldConfig?.callOutFee?.keyMatchers);
+  const tblLabour = extractMoneyFromTables(tables, fieldConfig?.labour?.keyMatchers);
+  const tblMaterialsOther = extractMoneyFromTables(tables, fieldConfig?.materialsOther?.keyMatchers);
+  const tblTotal = extractMoneyFromTables(tables, fieldConfig?.total?.keyMatchers);
 
   const date =
     kvDate.value ||
@@ -230,35 +305,53 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
     extractLabeledValue(content, ['address']);
 
   const workDescription = kvWork.value || extractWorkDescription(lines);
-  const materialsUsed = kvMaterials.value || extractMaterials(lines);
 
-  const callOutFee =
-    kvCallOutFee.value ||
+  const materialsUsedField = moneyField(
+    tblMaterialsUsed,
+    kvMaterials,
+    extractMaterials(lines),
+    words
+  );
+
+  const callOutFeeField = moneyField(
+    tblCallOutFee,
+    kvCallOutFee,
     extractChargeValue(content, [
       /\bcall\s*[-_\s]*out\s*(?:fee)?\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
       /\bcall\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
-    ]);
+    ]),
+    words
+  );
 
-  const labour =
-    kvLabour.value ||
+  const labourField = moneyField(
+    tblLabour,
+    kvLabour,
     extractChargeValue(content, [
       /\blabou?r\s*[:\-]?\s*([0-9][0-9.,xX*\s]*)\b/i,
       /\blab\s*[:\-]?\s*([0-9][0-9.,xX*\s]*)\b/i,
-    ]);
+    ]),
+    words
+  );
 
-  const materialsOther =
-    kvMaterialsOther.value ||
+  const materialsOtherField = moneyField(
+    tblMaterialsOther,
+    kvMaterialsOther,
     extractChargeValue(content, [
       /\bmaterials?\s*\/\s*other\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
       /\bother\s*costs?\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
-    ]);
+    ]),
+    words
+  );
 
-  const total =
-    kvTotal.value ||
+  const totalField = moneyField(
+    tblTotal,
+    kvTotal,
     extractChargeValue(content, [
       /\btotal\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
       /\bamount\s*due\s*[:\-]?\s*([0-9][0-9.,]*)\b/i,
-    ]);
+    ]),
+    words
+  );
 
   const completedMarker = `${completedLine} ${completedNext}`.toUpperCase();
   const completedNo = /\bN\b/.test(completedMarker) || /\bNO\b/.test(completedMarker);
@@ -302,32 +395,22 @@ export function parseJobCardText(readResult, fieldConfig = {}) {
       confidence: kvWork.confidence ?? confidenceForValue(workDescription, words),
       found: Boolean(workDescription),
     },
-    materialsUsed: {
-      value: materialsUsed,
-      confidence: kvMaterials.confidence ?? confidenceForValue(materialsUsed, words),
-      found: Boolean(materialsUsed),
-    },
-    callOutFee: {
-      value: callOutFee,
-      confidence: kvCallOutFee.confidence ?? confidenceForValue(callOutFee, words),
-      found: Boolean(callOutFee),
-    },
-    labour: {
-      value: labour,
-      confidence: kvLabour.confidence ?? confidenceForValue(labour, words),
-      found: Boolean(labour),
-    },
-    materialsOther: {
-      value: materialsOther,
-      confidence: kvMaterialsOther.confidence ?? confidenceForValue(materialsOther, words),
-      found: Boolean(materialsOther),
-    },
-    total: {
-      value: total,
-      confidence: kvTotal.confidence ?? confidenceForValue(total, words),
-      found: Boolean(total),
-    },
+    materialsUsed: materialsUsedField,
+    callOutFee: callOutFeeField,
+    labour: labourField,
+    materialsOther: materialsOtherField,
+    total: totalField,
   };
+
+  // Handwritten values read worse than layout's confidence suggests —
+  // discount confidence by the share of a value's words that are handwritten.
+  for (const field of Object.values(fields)) {
+    const handwrittenShare = handwritingShareForValue(field.value, words);
+    field.handwrittenShare = handwrittenShare;
+    if (handwrittenShare > 0 && Number.isFinite(field.confidence)) {
+      field.confidence *= 1 - HANDWRITING_DISCOUNT * handwrittenShare;
+    }
+  }
 
   return {
     content,
