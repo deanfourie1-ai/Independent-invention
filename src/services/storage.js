@@ -60,6 +60,7 @@ export async function createJob(patch) {
     materials: patch.materials || '',
     invoiceNumber: patch.invoiceNumber || '',
     invoiceCustomer: patch.invoiceCustomer || patch.customer?.name || 'OCR Imported Customer',
+    customerId: patch.customerId || null,
     charges: patch.charges || null,
     date: patch.date || '',
     time: patch.time || '',

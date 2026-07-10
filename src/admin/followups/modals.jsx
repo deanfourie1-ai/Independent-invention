@@ -83,14 +83,26 @@ export function TaskModal({ open, customers, onClose, onSave }) {
     </div>);
 }
 
-/* ── settings (customers) ── */
-export function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddCustomer }) {
+/* ── settings (customers + templates) ── */
+export function SettingsModal({ open, customers, templates, onClose, onSaveCustomer, onAddCustomer, onSaveTemplates }) {
+  const [settTab, setSettTab] = useState('customers');
   const [editId, setEditId] = useState(null);
   const [draft, setDraft] = useState({ contact: '', phone: '', email: '', address: '' });
   const [adding, setAdding] = useState(false);
   const [newC, setNewC] = useState({ name: '', contact: '', phone: '', email: '', address: '' });
 
-  useEffect(() => { if (open) { setEditId(null); setAdding(false); setNewC({ name: '', contact: '', phone: '', email: '', address: '' }); } }, [open]);
+  const [editTplId, setEditTplId] = useState(null);
+  const [tplDraft, setTplDraft] = useState({ name: '', body: '' });
+  const [addingTpl, setAddingTpl] = useState(false);
+  const [newTpl, setNewTpl] = useState({ name: '', body: '' });
+
+  useEffect(() => {
+    if (open) {
+      setSettTab('customers');
+      setEditId(null); setAdding(false); setNewC({ name: '', contact: '', phone: '', email: '', address: '' });
+      setEditTplId(null); setAddingTpl(false); setNewTpl({ name: '', body: '' });
+    }
+  }, [open]);
   if (!open) return null;
 
   const sorted = [...customers].sort((a, b) => a.name.localeCompare(b.name));
@@ -98,18 +110,45 @@ export function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddC
   const commitEdit = () => { onSaveCustomer(editId, draft); setEditId(null); };
   const commitAdd = () => { if (!newC.name.trim()) return; onAddCustomer({ ...newC, name: newC.name.trim() }); setAdding(false); setNewC({ name: '', contact: '', phone: '', email: '', address: '' }); };
 
+  const startEditTpl = (t) => { setEditTplId(t.id); setTplDraft({ name: t.name, body: t.body }); setAddingTpl(false); };
+  const commitEditTpl = () => {
+    if (!tplDraft.name.trim() || !tplDraft.body.trim()) return;
+    onSaveTemplates(templates.map((t) => (t.id === editTplId ? { ...t, name: tplDraft.name.trim(), body: tplDraft.body.trim() } : t)));
+    setEditTplId(null);
+  };
+  const commitAddTpl = () => {
+    if (!newTpl.name.trim() || !newTpl.body.trim()) return;
+    onSaveTemplates([...templates, { id: 'tpl-' + Date.now().toString(36), name: newTpl.name.trim(), body: newTpl.body.trim() }]);
+    setAddingTpl(false);
+    setNewTpl({ name: '', body: '' });
+  };
+  const removeTpl = (t) => {
+    if (!window.confirm(`Delete the "${t.name}" template?`)) return;
+    onSaveTemplates(templates.filter((x) => x.id !== t.id));
+  };
+
   return (
     <div className="sl-modal-scrim" onClick={onClose}>
       <div className="sl-modal sl-settings" onClick={(e) => e.stopPropagation()}>
         <div className="head">
           <div>
             <div className="tw-eyebrow">Settings</div>
-            <div className="ttl">Customers</div>
-            <div className="sl-contact">Contact details fill in as you import invoices — add or edit phone, email and address here.</div>
+            <div className="ttl">{settTab === 'customers' ? 'Customers' : 'Follow-up templates'}</div>
+            <div className="sl-contact">
+              {settTab === 'customers'
+                ? 'Contact details fill in as you import invoices — add or edit phone, email and address here.'
+                : 'These quick templates appear when logging a call, WhatsApp or email on a customer’s follow-up card. Use {contact}, {amount}, {invoices}, {oldestDays} and {today} as placeholders — they’re filled in automatically.'}
+            </div>
           </div>
           <button className="tw-btn tw-icbtn" onClick={onClose}><FI.x /></button>
         </div>
 
+        <div className="sl-setttabs">
+          <button className={'tw-tab' + (settTab === 'customers' ? ' is-active' : '')} onClick={() => setSettTab('customers')}>Customers</button>
+          <button className={'tw-tab' + (settTab === 'templates' ? ' is-active' : '')} onClick={() => setSettTab('templates')}>Templates</button>
+        </div>
+
+        {settTab === 'customers' ? <>
         <div className="sl-settbar">
           <span className="cnt">{customers.length} customer{customers.length === 1 ? '' : 's'}</span>
           {!adding &&
@@ -175,6 +214,57 @@ export function SettingsModal({ open, customers, onClose, onSaveCustomer, onAddC
               </div>);
           })}
         </div>
+        </> : <>
+
+        <div className="sl-settbar">
+          <span className="cnt">{templates.length} template{templates.length === 1 ? '' : 's'}</span>
+          {!addingTpl &&
+            <button className="tw-btn tw-btn--primary tw-btn--sm" onClick={() => { setAddingTpl(true); setEditTplId(null); }}><FI.plus />Add template</button>}
+        </div>
+
+        <div className="body">
+          {addingTpl &&
+            <div className="sl-custcard adding">
+              <div className="ca-head">
+                <input className="nm-in" placeholder="Template name, e.g. Second reminder" value={newTpl.name} autoFocus onChange={(e) => setNewTpl({ ...newTpl, name: e.target.value })} />
+              </div>
+              <div className="ca-fields">
+                <label className="f wide"><span className="k">Message</span>
+                  <textarea className="sl-ta tpl-ta" placeholder="Hi {contact} — ..." value={newTpl.body} onChange={(e) => setNewTpl({ ...newTpl, body: e.target.value })} /></label>
+              </div>
+              <div className="ca-foot">
+                <button className="tw-btn tw-btn--primary tw-btn--sm" disabled={!newTpl.name.trim() || !newTpl.body.trim()} onClick={commitAddTpl}><FI.check />Add template</button>
+                <button className="tw-btn tw-btn--sm" onClick={() => setAddingTpl(false)}>Cancel</button>
+              </div>
+            </div>}
+
+          {templates.map((t) => {
+            const editing = editTplId === t.id;
+            return (
+              <div className={'sl-custcard' + (editing ? ' editing' : '')} key={t.id}>
+                <div className="ca-head">
+                  {editing
+                    ? <input className="nm-in" value={tplDraft.name} onChange={(e) => setTplDraft({ ...tplDraft, name: e.target.value })} />
+                    : <div className="nm">{t.name}</div>}
+                  {!editing && <button className="tw-btn tw-btn--sm" onClick={() => startEditTpl(t)}>Edit</button>}
+                </div>
+                {editing
+                  ? <>
+                      <div className="ca-fields">
+                        <label className="f wide"><span className="k">Message</span>
+                          <textarea className="sl-ta tpl-ta" value={tplDraft.body} onChange={(e) => setTplDraft({ ...tplDraft, body: e.target.value })} /></label>
+                      </div>
+                      <div className="ca-foot">
+                        <button className="tw-btn tw-btn--primary tw-btn--sm" onClick={commitEditTpl}><FI.check />Save</button>
+                        <button className="tw-btn tw-btn--sm" onClick={() => setEditTplId(null)}>Cancel</button>
+                        <button className="tw-btn tw-btn--sm tpl-del" onClick={() => removeTpl(t)}>Delete</button>
+                      </div>
+                    </>
+                  : <div className="ca-view tpl-preview">{t.body}</div>}
+              </div>);
+          })}
+        </div>
+        </>}
 
         <div className="foot">
           <button className="tw-btn tw-btn--primary" style={{ flex: 1, justifyContent: 'center', height: 42 }} onClick={onClose}>Done</button>
