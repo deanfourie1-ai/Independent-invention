@@ -72,162 +72,6 @@ despite 6 contacts," not just "bad").
 
 ---
 
-## 2. Re-import should reconcile, not just append
-
-Today "Upload Excel list" appends new invoices and skips invoice numbers it already
-has. It never notices invoices that **disappeared** from the new export (= paid) and
-never updates a balance that **shrank** (a partial payment). Outstanding totals drift
-from reality unless the admin marks everything manually.
-
-**Idea:** make re-import a true reconcile — close invoices that dropped off, update
-changed balances. **Risk to handle:** don't wrongly close an invoice that's just
-missing because someone exported a *filtered/partial* report (e.g. require a "full
-export" confirmation, or only auto-close within the same aging buckets present).
-
----
-
-## 3. Customer identity / matching key
-
-Dedupe currently keys on the **normalized customer name**. This is fragile — our own
-test file proved it: `Engen One Plus (Quote 2438) Dep R8392,12` vs `Engen One Plus`
-would import as **two** customers with split histories/balances; meanwhile two
-different "J. Smith"s would merge into one.
-
-**Idea:** key identity on a **stable account/customer code** from the export (the
-file had a code in column A) instead of the name. Decide the fallback when a row has
-no code. This also unlocks cross-workspace matching (job-card ↔ follow-up customer),
-which the risk-status warning (1b) depends on.
-
----
-
-## 4. Multi-user accountability + proactive reminders
-
-Two quiet assumptions today:
-- Every interaction is logged as "Admin" — no record of *who* actually chased.
-- The tool is passive — an overdue task only surfaces if someone opens the screen.
-
-**Ideas:**
-- Per-user identity on the log (login or a "who's logged in" selector) for trust and
-  handover. The `by` field already exists in the data model.
-- Active nudges — a daily "5 overdue" summary, desktop/email reminder — instead of
-  waiting to be checked.
-
----
-
-## 5. ~~(Minor) Days-overdue is frozen at import time~~ ✅ Done in v0.3.3
-
-~~The `days` value is captured at import and never ages forward.~~
-
-**Implemented:** invoices now store `invoiceDate` (when a date column is mapped) or
-`importedDays + importedAt` (when only a days column is mapped). The `invDays(iv)`
-helper in `helpers.js` recalculates live on every render.
-
----
-
-## 6. Home dashboard  *(branch: dev-future-build)*
-
-**Goal:** A landing screen that shows the state of the whole business at a glance before
-diving into any tab.
-
-### What it shows
-| Card | Data source |
-|---|---|
-| Jobs awaiting recapture | `jobs.json` — status `printed` |
-| Total outstanding (follow-ups) | `customers.json` — sum of unpaid invoices |
-| Overdue follow-ups | `interactions` — followUpIso < today |
-| Last backup | `backup-log.json` |
-| Recent activity feed | Last 5–10 interactions + last 5 job events |
-
-### Components needed
-- `src/admin/DashboardPanel.jsx` — new top-level panel
-- Stat cards (reusable, takes label + value + tone)
-- Recent activity list (merged interactions + job events, sorted newest first)
-- Quick-action buttons: "Go to capture queue", "View overdue", "Run OCR"
-
-### API addition
-- `GET /api/dashboard` — server aggregates a single payload:
-  `{ pendingCapture, totalOutstanding, overdueCount, recentActivity[], lastBackup }`
-  Keeps the frontend thin; one fetch on mount.
-
-### Routing change
-- Dashboard becomes the default landing view instead of the OCR tab.
-- Minor change to `AdminApp.jsx` tab order / default state.
-
-**Estimated scope:** Medium — 1 new panel, 1 API endpoint, minor routing tweak.
-
----
-
-## 7. Follow-up message templates  *(branch: dev-future-build)*
-
-**Goal:** Pre-written call scripts and WhatsApp/email templates in the log drawer,
-auto-filled with customer name, amount, and invoice numbers. One click copies ready
-to paste.
-
-### Default templates
-| Name | Tone / when to use |
-|---|---|
-| First contact | Never been contacted before |
-| Payment reminder | General overdue chase |
-| Final notice | Invoice > 90 days |
-| Broken promise | Missed a payment date they committed to |
-| Payment confirmed | Logging a receipt |
-
-### Template variables
-`{name}` `{contact}` `{amount}` `{invoices}` `{oldestDays}` `{nextFollowUpDate}`
-
-Example:
-> Hi {contact}, it's Karin from Bethlehem Plumbers. I'm following up on your balance
-> of {amount} on invoice {invoices}. Could we arrange payment this week?
-
-### Data & API
-- Defaults hardcoded in `src/admin/followups/templates.js`
-- Custom templates stored in `data/templates.json`
-- `GET /api/templates` and `PUT /api/templates`
-
-### UI additions
-- In `CustomerDrawer`: "Use template" dropdown appears after selecting contact method
-- Selecting a template populates the textarea (still editable before saving)
-- Template management section inside the follow-ups Settings modal
-
-**Estimated scope:** Medium — new data file, 2 API routes, UI additions to existing drawer.
-
----
-
-## 8. Cross-reference — job capture ↔ follow-ups  *(branch: dev-future-build)*
-
-**Goal:** The two workflows are currently isolated. A job captured for "Engen Prime
-Wimpy" and a follow-up for "Engen Prime Wimpy" are the same customer — the app should
-surface that connection.
-
-### Phase A — Job card shows follow-up badge  *(start here)*
-When viewing a captured job, show a warning badge if that customer has an open
-follow-up:
-> ⚠ Engen Prime Wimpy — R 6 750 outstanding · overdue
-
-Links directly to that customer's follow-up drawer.
-
-Implementation: fuzzy name match `job.customer.name` vs `customers[].name` on the
-client (extend the `techMatcher.js` approach). Show badge only at match score ≥ 0.8
-and `!customer.settled`.
-
-### Phase B — Follow-up drawer shows job history  *(natural extension of A)*
-In the customer drawer, a read-only "Job history" section lists captured jobs matching
-this customer — ref, date, invoice number, total.
-
-### Phase C — Auto-create follow-up from captured job  *(phase 2, after real-world testing)*
-When a captured job's invoice date + N configurable days passes with no payment logged,
-automatically create a follow-up task on startup (alongside the backup run). N is set
-in Settings (default: 30 days).
-
-### Name matching strategy
-- Normalise: lowercase, strip punctuation, collapse whitespace
-- Score: exact → 1.0 | all words present → 0.9 | partial overlap → 0.7
-- Only surface at ≥ 0.8 to avoid false positives on short/common names
-
-**Estimated scope:** A+B = medium. C = medium-large (new settings field + startup job).
-
----
-
 ## 9. OCR accuracy — 5-step improvement plan (staying on prebuilt-layout)
 
 **Context:** OCR uses Azure Document Intelligence `prebuilt-layout` (REST, API
@@ -237,7 +81,10 @@ model itself can't be trained — it only improves when Microsoft ships a new
 what we request, and how we interpret the response. Ordered so each step feeds
 the next — measurement first.
 
-### Step 1 — Accuracy feedback loop *(do first — makes everything else measurable)*
+### Step 1 — Accuracy feedback loop — ✅ DONE 2026-07-04
+*(Implemented: `src/services/ocrAccuracy.js`, `ocrImport.snapshot` on both save paths in
+`OcrExtractionPanel.jsx`, "OCR accuracy" report section in Settings. The report compares
+snapshots against the job's live values, so later capture-flow edits count automatically.)*
 When a reviewed job is saved, store the original OCR-parsed values alongside the
 admin's final values (e.g. `ocrSnapshot` on the job record in `jobs.json`). Add a
 per-field accuracy readout ("Invoice number: 94% accepted unchanged, Materials:
@@ -255,7 +102,12 @@ Step 1 data) plus per-field confidence colouring in the review UI.
 - Why: a bad scan currently looks identical to a good one until the admin starts
   finding errors mid-review.
 
-### Step 3 — Consume layout data we already pay for: tables, selection marks, handwriting
+### Step 3 — Consume layout data we already pay for: tables, selection marks, handwriting — ✅ DONE 2026-07-04
+*(Implemented: `normalizeAnalyzeResult()` now passes through `tables`, `selectionMarks`,
+`styles`, and flags each word `isHandwritten`. `jobCardParser.js` reads the five money
+fields from table rows first (label cell matched via the same keyMatchers, first
+digit-bearing cell to its right), falling back to keyValuePairs then regex; each field
+records its `source`. Handwritten values lose up to 20% confidence via `handwrittenShare`.)*
 Extend `normalizeAnalyzeResult()` to pass through `tables[]`, `selectionMarks`,
 and `styles` (currently dropped from every response). In `jobCardParser.js`: read
 the money fields (call-out fee, labour, materials, total) from the detected table

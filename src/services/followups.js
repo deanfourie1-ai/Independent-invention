@@ -2,6 +2,8 @@
    Mirrors services/storage.js: thin fetch wrappers over the local API
    (server/api.js) plus a change event the hook subscribes to. */
 
+import { findCustomerMatch } from './nameMatcher';
+
 const CHANGED_EVENT = 'tidewell:followups:changed';
 
 function emitChanged() {
@@ -60,6 +62,27 @@ export async function deleteCustomer(id) {
   return result;
 }
 
+/* Finds an existing customer by fuzzy name match, or creates a new one.
+   Used when a job card is captured, so job-card customers and follow-up
+   customers converge on the same shared list. */
+export async function matchOrCreateCustomer(name, extra = {}) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return null;
+  const customers = await getCustomers();
+  const match = findCustomerMatch(trimmed, customers);
+  if (match) return match.id;
+  const created = await addCustomer({
+    id: 'C-JOB' + Date.now(),
+    name: trimmed,
+    contact: '',
+    phone: extra.phone || '',
+    email: null,
+    address: extra.address || '',
+    invoices: [],
+  });
+  return created.id;
+}
+
 /* ── interactions ── */
 export function getInteractions() {
   return jsonFetch('/api/interactions');
@@ -96,4 +119,17 @@ export async function undoImport() {
 
 export function getImportUndoStatus() {
   return jsonFetch('/api/followups/import-undo-status');
+}
+
+/* ── follow-up templates ── */
+export function getTemplates() {
+  return jsonFetch('/api/templates');
+}
+
+export function replaceTemplates(list) {
+  return jsonFetch('/api/templates', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(list),
+  });
 }

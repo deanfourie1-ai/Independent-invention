@@ -9,7 +9,6 @@ const BUCKETS = [
   { id: 'today', label: 'Due today', tone: 'today' },
   { id: 'upcoming', label: 'Upcoming', tone: 'upcoming' },
   { id: 'first', label: 'Needs first contact', tone: 'first' },
-  { id: 'resolved', label: 'Fully paid', tone: 'resolved' },
 ];
 export const bucketOf = (r) => {
   if (r.resolved) return 'resolved';
@@ -60,7 +59,8 @@ function ActionRow({ r, onOpen }) {
 }
 
 export function ActionList({ rows, onOpen }) {
-  if (!rows.length) {
+  const open = rows.filter((r) => !r.resolved);
+  if (!open.length) {
     return (
       <div className="tw-card"><div className="sl-allclear">
         <div className="big"><FI.checkc /></div>
@@ -68,7 +68,7 @@ export function ActionList({ rows, onOpen }) {
         <p>Every customer who owes has a follow-up logged. Nice work.</p>
       </div></div>);
   }
-  const groups = BUCKETS.map((b) => ({ ...b, items: rows.filter((r) => bucketOf(r) === b.id) })).filter((g) => g.items.length);
+  const groups = BUCKETS.map((b) => ({ ...b, items: open.filter((r) => bucketOf(r) === b.id) })).filter((g) => g.items.length);
   return (
     <div className="sl-groups">
       {groups.map((g) => (

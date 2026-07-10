@@ -414,7 +414,10 @@ export default function AdminApp({ workspaceSwitch }) {
                   <DigitalJobCard
                     job={job}
                     onUpdate={(patch) => patchJob(job.id, patch).catch(() => {})}
-                    followupMatch={findCustomerMatch(job.customer?.name, followupCustomers)}
+                    followupMatch={
+                      (job.customerId && followupCustomers.find((c) => c.id === job.customerId)) ||
+                      findCustomerMatch(job.customer?.name, followupCustomers)
+                    }
                   />
                 )}
               </div>

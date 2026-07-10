@@ -5,7 +5,7 @@ import { S } from './helpers';
 import useFollowups from '../../hooks/useFollowups';
 import {
   addInteraction, patchCustomer, addCustomer, deleteCustomer,
-  applyImport, undoImport, getImportUndoStatus,
+  applyImport, undoImport, getImportUndoStatus, getTemplates, replaceTemplates,
 } from '../../services/followups';
 import { reconcileImport } from './reconcile';
 import { DEFAULT_TEMPLATES } from './templates';
@@ -62,8 +62,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
   useEffect(() => { try { localStorage.setItem(IMPORT_KEY, JSON.stringify(importMeta)); } catch (_) {} }, [importMeta]);
 
   useEffect(() => {
-    fetch('/api/templates')
-      .then((r) => r.json())
+    getTemplates()
       .then((saved) => { if (Array.isArray(saved) && saved.length) setTemplates(saved); })
       .catch(() => {});
     getImportUndoStatus()
@@ -166,6 +165,12 @@ export default function FollowupsApp({ workspaceSwitch }) {
       address: address.trim() || null, invoices: [],
     });
     flash(name + ' added to customers');
+  };
+
+  const saveTemplates = async (list) => {
+    await replaceTemplates(list);
+    setTemplates(list);
+    flash('Templates saved');
   };
 
   const saveTask = async ({ customerId, newCustomer, note, followUpIso, followUpTime }) => {
@@ -457,8 +462,8 @@ export default function FollowupsApp({ workspaceSwitch }) {
 
         <CustomerDrawer customer={drawerCust} history={drawerId ? (histByCust[drawerId] || []) : []} onClose={() => setDrawerId(null)} onSave={saveLog} onDelete={deleteTask} templates={templates} />
         <TaskModal open={showTask} customers={customers} onClose={() => setShowTask(false)} onSave={saveTask} />
-        <SettingsModal open={showSettings} customers={customers} onClose={() => setShowSettings(false)}
-          onSaveCustomer={saveCustomerDetails} onAddCustomer={addCustomerFromSettings} />
+        <SettingsModal open={showSettings} customers={customers} templates={templates} onClose={() => setShowSettings(false)}
+          onSaveCustomer={saveCustomerDetails} onAddCustomer={addCustomerFromSettings} onSaveTemplates={saveTemplates} />
         <InteractionsPopup customer={popupCust} entries={popupEntries} onClose={() => setPopupId(null)}
           onPrint={printInteractions} onExport={exportCsv} onLog={(id) => { setPopupId(null); setDrawerId(id); }} />
         {importDraft && <ImportMapModal draft={importDraft} savedMap={savedMap} onCancel={() => setImportDraft(null)} onConfirm={commitImport} />}

@@ -3,6 +3,7 @@ import Icon from '../components/Icon';
 import { createJob, uploadImage } from '../services/storage';
 import { loadOcrFieldConfig } from '../services/ocrFieldConfig';
 import { matchTechnicians } from '../services/techMatcher';
+import { matchOrCreateCustomer } from '../services/followups';
 import {
   getStagedDocs,
   subscribeStagedDocs,
@@ -106,10 +107,13 @@ function StagedPreview({ doc }) {
 
   if (!doc) return null;
   if (isPdf) {
+    // #view=FitH tells the browser's built-in PDF viewer to fit the page to
+    // the frame's width on open, so the whole card is readable immediately
+    // instead of loading at a default zoom the user has to adjust.
     return pdfUrl ? (
       <iframe
         className="ocr-preview-pdf"
-        src={pdfUrl}
+        src={`${pdfUrl}#view=FitH`}
         title={`Scan preview ${doc.fileName}`}
       />
     ) : (
@@ -304,6 +308,12 @@ export default function OcrExtractionPanel({ job, onCreated }) {
     const assignedTo = matchTechnicians(rawAssignedTo, techList) || rawAssignedTo;
     const customerName = String(fields.customerName?.value || '').trim();
     const customerAddress = String(fields.customerAddress?.value || '').trim();
+    let customerId = null;
+    try {
+      customerId = await matchOrCreateCustomer(customerName || deriveCustomerName(result), { address: customerAddress });
+    } catch (_) {
+      // Non-fatal — capture should never block on the shared customer list being unreachable.
+    }
     const jobDone = String(fields.workDescription?.value || '').trim();
     const materialsUsed = String(fields.materialsUsed?.value || '').trim();
     const callOutFee = String(fields.callOutFee?.value || '').trim();
@@ -350,6 +360,7 @@ export default function OcrExtractionPanel({ job, onCreated }) {
           address: customerAddress || 'Address pending admin capture',
           phone: '—',
         },
+        customerId,
         jobType: finishToHistory ? 'OCR import - finished' : 'OCR import - admin capture required',
         printedBy: 'OCR import',
         printedAt: new Date().toLocaleString(),
