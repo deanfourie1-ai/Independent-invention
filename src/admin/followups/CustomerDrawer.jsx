@@ -7,7 +7,7 @@ import { nameMatchScore } from '../../services/nameMatcher';
 import { METHODS, InteractionsTable } from './interactions';
 
 export default function CustomerDrawer({ customer, history, onClose, onSave, onDelete, templates }) {
-  const [dids, setDids] = useState(['call']);
+  const [dids, setDids] = useState([]);
   const [said, setSaid] = useState('');
   const [fuOn, setFuOn] = useState(true);
   const [fuDate, setFuDate] = useState(S.addDaysIso(S.TODAY_ISO, 7));
@@ -16,11 +16,12 @@ export default function CustomerDrawer({ customer, history, onClose, onSave, onD
   const [invPaid, setInvPaid] = useState({});
   const [confirmDel, setConfirmDel] = useState(false);
   const [jobHistory, setJobHistory] = useState([]);
+  const [didError, setDidError] = useState(false);
   const c = customer || {};
 
   useEffect(() => {
     if (customer) {
-      setDids(['call']); setSaid(''); setFuOn(true);
+      setDids([]); setSaid(''); setFuOn(true); setDidError(false);
       setFuDate(S.addDaysIso(S.TODAY_ISO, 7)); setFuTime('09:00');
       const paid = {};
       (customer.invoices || []).forEach((iv) => { if (iv.paid) paid[iv.no] = true; });
@@ -53,18 +54,27 @@ export default function CustomerDrawer({ customer, history, onClose, onSave, onD
   const recalcOutstanding = () => setOsStr(String(S.sumUnpaid(c, invPaid)));
   const outstandingNum = parseMoney(osStr);
 
-  /* toggle a method on/off, keep at least one selected, keep METHODS order */
+  /* toggle a method on/off, keep METHODS order; selecting "Fully paid" turns
+     off the follow-up section (no need to plan a follow-up once paid), and
+     deselecting it turns the follow-up section back on. */
   const toggleDid = (mid) => setDids((prev) => {
-    if (prev.includes(mid)) return prev.length > 1 ? prev.filter((x) => x !== mid) : prev;
-    return METHODS.map((m) => m.id).filter((id) => id === mid || prev.includes(id));
+    setDidError(false);
+    const next = prev.includes(mid)
+      ? prev.filter((x) => x !== mid)
+      : METHODS.map((m) => m.id).filter((id) => id === mid || prev.includes(id));
+    if (mid === 'paid') setFuOn(!next.includes('paid'));
+    return next;
   });
 
   const QUICK = [{ label: 'In 3 days', n: 3 }, { label: 'In 1 week', n: 7 }, { label: 'In 2 weeks', n: 14 }];
-  const save = () => onSave({
-    dids, said: said.trim(),
-    followUpIso: fuOn ? fuDate : null, followUpTime: fuOn ? fuTime : null,
-    outstanding: outstandingNum, invoicePaid: invPaid,
-  });
+  const save = () => {
+    if (dids.length === 0) { setDidError(true); return; }
+    onSave({
+      dids, said: said.trim(),
+      followUpIso: fuOn ? fuDate : null, followUpTime: fuOn ? fuTime : null,
+      outstanding: outstandingNum, invoicePaid: invPaid,
+    });
+  };
   const plannedEntry = history.find((h) => h.followUpIso) || null;
   const planned = plannedEntry ? plannedEntry.followUpIso : null;
   const plannedTime = plannedEntry ? plannedEntry.followUpTime : null;
@@ -132,10 +142,11 @@ export default function CustomerDrawer({ customer, history, onClose, onSave, onD
             <div className="sl-q">What was done? <span className="opt">tick everything that happened</span></div>
             <div className="sl-methods">
               {METHODS.map((m) => (
-                <button key={m.id} className={'sl-method' + (dids.includes(m.id) ? ' on' : '')} onClick={() => toggleDid(m.id)} aria-pressed={dids.includes(m.id)}>
+                <button key={m.id} className={'sl-method' + (m.id === 'paid' ? ' sl-method--paid' : '') + (dids.includes(m.id) ? ' on' : '')} onClick={() => toggleDid(m.id)} aria-pressed={dids.includes(m.id)}>
                   <span className="mi"><m.icon /></span><span className="ml">{m.label}</span>
                 </button>))}
             </div>
+            {didError && <div className="sl-doerr"><FI.flag />Interaction needed — select what happened before saving.</div>}
 
             {(templates || []).length > 0 && (
               <>
@@ -176,10 +187,8 @@ export default function CustomerDrawer({ customer, history, onClose, onSave, onD
               {fuOn && fuDate &&
                 <div className="preview"><FI.clock /><span><b>{S.isoToDow(fuDate)} {S.isoToDisp(fuDate)}</b> at {fuTime} · {S.fuRelative(fuDate)}</span></div>}
             </div>
-            <label className="sl-none">
-              <input type="checkbox" checked={!fuOn} onChange={(e) => setFuOn(!e.target.checked)} />
-              Paid / settled — no follow-up needed, remove from the list
-            </label>
+            {!fuOn && dids.includes('paid') &&
+              <div className="preview" style={{ marginTop: 11 }}><FI.checkc /><span>Marked <b>fully paid</b> — no follow-up needed, removed from the list</span></div>}
           </div>
 
           <div className="loghist">

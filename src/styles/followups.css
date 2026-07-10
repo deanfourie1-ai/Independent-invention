@@ -147,6 +147,7 @@
 /* verb chip */
 .verb{ flex:0 0 auto; display:inline-flex; align-items:center; height:19px; padding:0 8px; border-radius:6px;
   font-size:11px; font-weight:800; letter-spacing:.01em; }
+.v-paid{ background:var(--green-bg); color:var(--green); }
 .v-call{ background:var(--brand-bg); color:var(--brand-ink); }
 .v-whatsapp{ background:#dcf6e3; color:#118a4e; }
 .v-email{ background:var(--violet-bg); color:var(--violet); }
@@ -200,7 +201,7 @@
 .sl-todo.overdue{ background:#fdecec; color:var(--danger); border-color:transparent; }
 .sl-todo.none{ background:var(--surface-2); color:var(--ink-2); }
 
-.sl-methods{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+.sl-methods{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
 .sl-method{ display:flex; flex-direction:column; align-items:center; gap:7px; padding:12px 4px; border:1.5px solid var(--line-strong);
   border-radius:11px; background:var(--surface); cursor:pointer; transition:.12s; font-family:var(--font); }
 .sl-method:hover{ border-color:var(--line-hover); background:var(--surface-2); }
@@ -211,6 +212,11 @@
 .sl-method.on{ border-color:var(--brand); background:var(--brand-bg); box-shadow:0 0 0 1px var(--brand); }
 .sl-method.on .mi{ background:var(--brand); color:#fff; }
 .sl-method.on .ml{ color:var(--brand-ink); }
+.sl-method--paid.on{ border-color:var(--green); background:var(--green-bg); box-shadow:0 0 0 1px var(--green); }
+.sl-method--paid.on .mi{ background:var(--green); color:#fff; }
+.sl-method--paid.on .ml{ color:var(--green); }
+.sl-doerr{ display:flex; align-items:center; gap:7px; margin:-2px 0 10px; font-size:12px; font-weight:700; color:var(--danger); }
+.sl-doerr svg{ width:15px; height:15px; flex:0 0 auto; }
 
 .sl-ta{ width:100%; min-height:88px; padding:11px 12px; border:1px solid var(--line-strong); border-radius:10px; box-sizing:border-box;
   font-family:var(--font); font-size:13.5px; line-height:1.5; color:var(--ink); background:var(--surface); resize:vertical; }
@@ -372,6 +378,7 @@
 .sl-itable .ty .tymark{ display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:8px;
   vertical-align:middle; margin-right:8px; }
 .sl-itable .ty .tymark svg{ width:14px; height:14px; }
+.sl-itable .ty .tymark.v-paid{ background:var(--green-bg); color:var(--green); }
 .sl-itable .ty .tymark.v-call{ background:var(--brand-bg); color:var(--brand-ink); }
 .sl-itable .ty .tymark.v-whatsapp{ background:#dcf6e3; color:#118a4e; }
 .sl-itable .ty .tymark.v-email{ background:var(--violet-bg); color:var(--violet); }

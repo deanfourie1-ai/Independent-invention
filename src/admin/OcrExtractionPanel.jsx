@@ -37,11 +37,6 @@ function pct(value) {
   return `${Math.round(value * 100)}%`;
 }
 
-function bboxText(points) {
-  if (!Array.isArray(points) || !points.length) return 'n/a';
-  return points.map((p) => `(${Math.round(p.x)}, ${Math.round(p.y)})`).join(' ');
-}
-
 function isPdfMime(mime) {
   return String(mime || '').toLowerCase() === 'application/pdf';
 }
@@ -626,7 +621,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                   </table>
 
                   <div className="ocr-raw-wrap">
-                    <h3>Raw OCR lines (with bounding boxes)</h3>
                     {error && (
                       <div className="ocr-alert danger" style={{ marginBottom: 8 }}>
                         <Icon name="alertCircle" size={16} />
@@ -659,28 +653,6 @@ export default function OcrExtractionPanel({ job, onCreated }) {
                         <Icon name="plus" size={16} />
                         <span>Order pending</span>
                       </button>
-                    </div>
-                    <div className="ocr-raw-table">
-                      <table className="map-table">
-                        <thead>
-                          <tr>
-                            <th>Page</th>
-                            <th>Text</th>
-                            <th>Confidence</th>
-                            <th>Bounding box</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {result.lines.map((line) => (
-                            <tr key={line.id}>
-                              <td>{line.pageNumber || 'n/a'}</td>
-                              <td>{line.content || 'n/a'}</td>
-                              <td>{pct(line.confidence)}</td>
-                              <td className="ocr-bbox">{bboxText(line.boundingPolygon)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
                     </div>
                   </div>
                 </div>

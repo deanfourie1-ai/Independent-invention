@@ -531,11 +531,16 @@ export async function handleRequest(req, res, next) {
       const interactions = readInteractions();
       const today        = new Date().toISOString().slice(0, 10);
 
+      // owed = manual override if set, else the sum of invoices not yet marked paid.
+      // Mirrors src/admin/followups/helpers.js `owed()` — the Follow-ups tab's
+      // source of truth — so the dashboard tile matches what that tab shows.
+      const owed = (c) => (typeof c.outstanding === 'number' ? c.outstanding : (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0));
+
       const pendingCapture  = jobs.filter((j) => j.status === 'printed' && !j.capturedAt).length;
       const capturedToday   = jobs.filter((j) => (j.capturedAt || '').slice(0, 10) === today).length;
       const totalOutstanding = customers
         .filter((c) => !c.settled)
-        .reduce((sum, c) => sum + (c.invoices || []).reduce((s, i) => s + (i.paid ? 0 : i.amount), 0), 0);
+        .reduce((sum, c) => sum + owed(c), 0);
 
       // interactions are newest-first; first followUpIso per customer is the active plan
       const activePlan = {};
@@ -546,7 +551,7 @@ export async function handleRequest(req, res, next) {
       }
       const overdueCount  = customers.filter((c) => !c.settled && activePlan[c.id] && activePlan[c.id] < today).length;
       const needsFirst    = customers.filter((c) => !c.settled && !contacted.has(c.id)).length;
-      const openFollowups = customers.filter((c) => !c.settled && c.invoices?.some((i) => !i.paid)).length;
+      const openFollowups = customers.filter((c) => !c.settled && owed(c) > 0).length;
 
       /* Merged activity feed: follow-up interactions + job events (scanned in,
          captured into Sage), newest first. Interaction ids embed their epoch

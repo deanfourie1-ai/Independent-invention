@@ -9,6 +9,7 @@ const BUCKETS = [
   { id: 'today', label: 'Due today', tone: 'today' },
   { id: 'upcoming', label: 'Upcoming', tone: 'upcoming' },
   { id: 'first', label: 'Needs first contact', tone: 'first' },
+  { id: 'resolved', label: 'Fully paid', tone: 'resolved' },
 ];
 export const bucketOf = (r) => {
   if (r.resolved) return 'resolved';
@@ -58,8 +59,8 @@ function ActionRow({ r, onOpen }) {
     </div>);
 }
 
-export function ActionList({ rows, onOpen }) {
-  const open = rows.filter((r) => !r.resolved);
+export function ActionList({ rows, onOpen, showPaid }) {
+  const open = rows.filter((r) => !r.resolved || showPaid);
   if (!open.length) {
     return (
       <div className="tw-card"><div className="sl-allclear">

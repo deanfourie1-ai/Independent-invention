@@ -43,6 +43,7 @@ export default function FollowupsApp({ workspaceSwitch }) {
   const [showTask, setShowTask] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [workDate, setWorkDate] = useState(S.TODAY_ISO);
+  const [showPaid, setShowPaid] = useState(false);
   const [toast, setToast] = useState(null);
   const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [importMeta, setImportMeta] = useState(() => {
@@ -446,7 +447,11 @@ export default function FollowupsApp({ workspaceSwitch }) {
                     today: rows.filter((r) => bucketOf(r) === 'today' || bucketOf(r) === 'first').length,
                     upcoming: rows.filter((r) => bucketOf(r) === 'upcoming').length,
                   }} />
-                <ActionList rows={rows} onOpen={setDrawerId} />
+                <label className="sl-headtoggle" style={{ margin: '0 0 14px' }}>
+                  <input type="checkbox" checked={showPaid} onChange={(e) => setShowPaid(e.target.checked)} />
+                  Show fully paid customers
+                </label>
+                <ActionList rows={rows} onOpen={setDrawerId} showPaid={showPaid} />
               </>
             : <>
                 <div className="sl-histbar">

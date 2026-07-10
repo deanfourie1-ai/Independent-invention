@@ -9,10 +9,11 @@ export const METHODS = [
   { id: 'email', label: 'Emailed', icon: FI.mail },
   { id: 'visit', label: 'Visited', icon: FI.pin },
   { id: 'note', label: 'Note', icon: FI.note },
+  { id: 'paid', label: 'Fully paid', icon: FI.checkc },
 ];
-const LABELS = { call: 'Called', whatsapp: 'WhatsApp', email: 'Emailed', visit: 'Visited', note: 'Note', task: 'To-do', import: 'Import' };
+const LABELS = { paid: 'Fully paid', call: 'Called', whatsapp: 'WhatsApp', email: 'Emailed', visit: 'Visited', note: 'Note', task: 'To-do', import: 'Import' };
 export const didLabel = (m) => LABELS[m] || m;
-export const didIcon = (m) => m === 'call' ? <FI.phone /> : m === 'whatsapp' ? <FI.whatsapp /> : m === 'email' ? <FI.mail /> : m === 'visit' ? <FI.pin /> : m === 'task' ? <FI.flag /> : m === 'import' ? <FI.excel /> : <FI.note />;
+export const didIcon = (m) => m === 'paid' ? <FI.checkc /> : m === 'call' ? <FI.phone /> : m === 'whatsapp' ? <FI.whatsapp /> : m === 'email' ? <FI.mail /> : m === 'visit' ? <FI.pin /> : m === 'task' ? <FI.flag /> : m === 'import' ? <FI.excel /> : <FI.note />;
 /* An entry may record several methods at once (dids: ['call','whatsapp',…]);
    older entries only carry the single `did`. */
 export const didsOf = (a) => (Array.isArray(a.dids) && a.dids.length ? a.dids : [a.did]);
