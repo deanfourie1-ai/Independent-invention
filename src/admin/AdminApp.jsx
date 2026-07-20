@@ -253,6 +253,11 @@ export default function AdminApp({ workspaceSwitch }) {
     setSelId(null);
   }
 
+  async function saveJobNotes(jobId, notes) {
+    const updated = await patchJob(jobId, { notes, notesUpdatedAt: new Date().toISOString() });
+    setHistoryRow((prev) => (prev && prev.id === jobId ? updated : prev));
+  }
+
   async function exportCompletedJobs() {
     if (!finished.length || exporting) return;
     setExporting(true);
@@ -448,7 +453,7 @@ export default function AdminApp({ workspaceSwitch }) {
       </div>
 
       {/* slide-in drawer for history */}
-      <DetailDrawer row={historyRow} onClose={() => setHistoryRow(null)} />
+      <DetailDrawer row={historyRow} onClose={() => setHistoryRow(null)} onSaveNotes={saveJobNotes} />
 
       {/* delete modal */}
       {deleteTarget && (

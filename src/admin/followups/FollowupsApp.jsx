@@ -56,9 +56,26 @@ export default function FollowupsApp({ workspaceSwitch }) {
   });
   const toastTimer = useRef(null);
   const fileRef = useRef(null);
+  const lastTodayRef = useRef(S.TODAY_ISO);
 
   // Movable "today" — set before any memo reads S.fuStatus.
   S.setToday(workDate);
+
+  // The tab/exe can be left open across midnight. If the calendar day rolls
+  // over while the admin was viewing "today", follow it forward; leave it
+  // alone if she'd deliberately navigated to a different day.
+  useEffect(() => {
+    const resync = () => {
+      const real = S.TODAY_ISO;
+      if (real !== lastTodayRef.current) {
+        setWorkDate((wd) => (wd === lastTodayRef.current ? real : wd));
+        lastTodayRef.current = real;
+      }
+    };
+    const timer = setInterval(resync, 60_000);
+    window.addEventListener('focus', resync);
+    return () => { clearInterval(timer); window.removeEventListener('focus', resync); };
+  }, []);
 
   useEffect(() => { try { localStorage.setItem(IMPORT_KEY, JSON.stringify(importMeta)); } catch (_) {} }, [importMeta]);
 

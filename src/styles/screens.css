@@ -516,6 +516,8 @@ textarea.input { resize: none; line-height: 1.5; min-height: 96px; }
 .tw-cust { font-weight:600; color:var(--ink); }
 .tw-billsto { display:flex; align-items:center; gap:4px; font-size:11.5px; color:var(--ink-3); margin-top:2px; white-space:nowrap; }
 .tw-billsto svg { width:13px; height:13px; flex:0 0 auto; }
+.tw-note-flag { display:inline-flex; align-items:center; margin-left:6px; color:var(--brand); vertical-align:middle; }
+.tw-note-flag svg { width:13px; height:13px; display:block; }
 .tw-num { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .tw-muted { color:var(--ink-3); }
 .tw-total { font-weight:700; font-variant-numeric:tabular-nums; }
@@ -572,6 +574,22 @@ textarea.input { resize: none; line-height: 1.5; min-height: 96px; }
 .tw-dl { display:grid; grid-template-columns:118px 1fr; gap:2px 14px; margin-top:16px; }
 .tw-dl dt { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3); padding:9px 0; border-bottom:1px solid var(--line); }
 .tw-dl dd { margin:0; padding:9px 0; font-size:13.5px; font-weight:600; border-bottom:1px solid var(--line); }
+
+/* ---------- job card notes ---------- */
+.tw-notes { margin-top:18px; }
+.tw-notes-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; }
+.tw-notes-edit { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:var(--brand-ink);
+  background:none; border:0; padding:0; cursor:pointer; }
+.tw-notes-edit svg { width:13px; height:13px; }
+.tw-notes-view { background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:12px 13px;
+  font-size:13.5px; line-height:1.55; color:var(--ink); white-space:pre-wrap; }
+.tw-notes-meta { margin-top:8px; font-size:11.5px; color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+.tw-notes-meta svg { width:12px; height:12px; flex:0 0 auto; }
+.tw-notes-input { width:100%; min-height:108px; resize:vertical; border:1px solid var(--brand); box-shadow:0 0 0 3px var(--brand-bg);
+  border-radius:10px; padding:11px 12px; font-family:var(--font); font-size:13.5px; line-height:1.55; color:var(--ink);
+  background:var(--surface); outline:none; }
+.tw-notes-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:9px; }
+.tw-notes-error { margin-top:7px; font-size:11.5px; color:var(--danger); }
 
 /* ---------- misc helpers ---------- */
 .tw-records { font-size:13px; color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums; }

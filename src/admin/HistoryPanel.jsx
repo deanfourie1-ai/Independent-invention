@@ -233,7 +233,17 @@ export default function HistoryPanel({ jobs, onRowSelect, onReopen, onDelete }) 
                       className={selectedId === job.id ? 'is-selected' : ''}
                       onClick={() => handleRowClick(job)}
                     >
-                      <td><span className="tw-ref">{job.ref}</span></td>
+                      <td>
+                        <span className="tw-ref">{job.ref}</span>
+                        {job.notes && (
+                          <span
+                            className="tw-note-flag"
+                            title={`Note: ${job.notes.length > 120 ? job.notes.slice(0, 120) + '…' : job.notes}`}
+                          >
+                            <Icon name="note" size={13} />
+                          </span>
+                        )}
+                      </td>
                       <td>{fmtDate(job.capturedAt)}</td>
                       <td>{fmtDate(job.date)}</td>
                       <td>

@@ -1,7 +1,7 @@
 {
   "name": "tidewell-admin-panel",
   "private": true,
-  "version": "0.6.3",
+  "version": "0.6.4",
   "type": "module",
   "bin": "server.js",
   "scripts": {

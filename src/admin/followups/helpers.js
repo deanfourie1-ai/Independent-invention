@@ -6,8 +6,8 @@ import { MONTHS as MON } from '../../services/dates';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const TODAY_ISO = new Date().toISOString().slice(0, 10);
-let CURRENT = TODAY_ISO; // movable "today"
+const getTodayIso = () => new Date().toISOString().slice(0, 10);
+let CURRENT = getTodayIso(); // movable "today"
 
 const isoToDisp = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return `${d} ${MON[m - 1]} ${y}`; };
 const isoToDow  = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return DOW[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]; };
@@ -46,7 +46,10 @@ const openInvoices = (c) => (c.invoices || []).filter((i) => !i.paid);
 const sumUnpaid = (c, paidMap) => round2((c.invoices || []).reduce((s, i) => s + ((paidMap && paidMap[i.no]) || i.paid ? 0 : i.amount), 0));
 
 export const S = {
-  TODAY_ISO,
+  // Live getter, not a value frozen at module load — the office tool's browser
+  // tab/exe can stay open for days, and a plain const here would keep stamping
+  // logs/imports with whatever date the tab happened to first load on.
+  get TODAY_ISO() { return getTodayIso(); },
   get today() { return CURRENT; },
   setToday(iso) { CURRENT = iso; },
   isoToDisp, isoToDow, addDaysIso, daysBetween, fuStatus, fuRelative,

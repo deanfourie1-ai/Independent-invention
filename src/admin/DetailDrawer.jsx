@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import Icon from '../components/Icon';
-import { fmtDate } from '../services/dates';
+import { fmtDate, fmtDateTime } from '../services/dates';
 
 function fmtR(n) {
   const num = parseFloat(String(n || '').replace(/[^0-9.]/g, ''));
@@ -25,9 +26,33 @@ const ScanIcon = () => (
   </svg>
 );
 
-export default function DetailDrawer({ row, onClose }) {
+export default function DetailDrawer({ row, onClose, onSaveNotes }) {
   const open = !!row;
   const j = row || {};
+
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notesError, setNotesError] = useState('');
+
+  useEffect(() => {
+    setEditingNotes(false);
+    setNotesDraft(j.notes || '');
+    setNotesError('');
+  }, [row?.id]);
+
+  async function saveNotes() {
+    setSavingNotes(true);
+    setNotesError('');
+    try {
+      await onSaveNotes?.(j.id, notesDraft.trim());
+      setEditingNotes(false);
+    } catch {
+      setNotesError('Could not save the note — try again.');
+    } finally {
+      setSavingNotes(false);
+    }
+  }
 
   const TECH_TONES = { t1: 'blue', t2: 'green', t3: 'amber', t4: 'violet', t5: 'green' };
   const DOT_TONES  = ['blue', 'green', 'amber', 'violet'];
@@ -130,6 +155,61 @@ export default function DetailDrawer({ row, onClose }) {
                 <dt>Total</dt>
                 <dd className="tw-num" style={{ fontWeight: 800 }}>{total > 0 ? fmtR(total) : '—'}</dd>
               </dl>
+
+              <div className="tw-notes">
+                <div className="tw-notes-head">
+                  <span className="tw-eyebrow">Notes</span>
+                  {!editingNotes && (
+                    <button type="button" className="tw-notes-edit" onClick={() => setEditingNotes(true)}>
+                      <Icon name="edit" size={13} />
+                      {j.notes ? 'Edit note' : 'Add note'}
+                    </button>
+                  )}
+                </div>
+
+                {editingNotes ? (
+                  <>
+                    <textarea
+                      className="tw-notes-input"
+                      autoFocus
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      placeholder="Bill-to changes, material swaps, anything the customer asked to update..."
+                    />
+                    {notesError && <div className="tw-notes-error">{notesError}</div>}
+                    <div className="tw-notes-actions">
+                      <button
+                        type="button"
+                        className="tw-btn tw-btn--sm"
+                        disabled={savingNotes}
+                        onClick={() => { setEditingNotes(false); setNotesDraft(j.notes || ''); setNotesError(''); }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="tw-btn tw-btn--sm tw-btn--primary"
+                        disabled={savingNotes}
+                        onClick={saveNotes}
+                      >
+                        {savingNotes ? 'Saving...' : 'Save note'}
+                      </button>
+                    </div>
+                  </>
+                ) : j.notes ? (
+                  <>
+                    <div className="tw-notes-view">{j.notes}</div>
+                    {j.notesUpdatedAt && (
+                      <div className="tw-notes-meta">
+                        <Icon name="clock" size={12} />
+                        Edited {fmtDateTime(j.notesUpdatedAt)}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="tw-notes-view" style={{ color: 'var(--ink-3)' }}>No notes yet.</div>
+                )}
+              </div>
             </div>
 
             <div className="tw-drawer-foot">
