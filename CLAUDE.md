@@ -1,5 +1,15 @@
 # Project memory — Jobtool (Tidewell Admin Panel)
 
+Read this first when working in this repo, then pull in the files below as needed.
+
+## Related: personal OS at `../Reference/os/`
+A separate personal knowledge/skills system lives at
+`C:\Users\rosel\Documents\AI Projects\Claude\Reference\os\`. It is **not**
+auto-loaded in this repo's sessions — it only applies if a session is started
+there directly, or if explicitly referenced. Relevant pieces:
+- `os/skills/interview/skill.md` — structured discovery interview, useful before
+  committing to scope on any fuzzy next step here.
+
 ## What this repo is
 This repo is the **office admin panel**, branded **"Jobtool"** (package `tidewell-admin-panel`).
 It is the *admin recapture* side of the wider Tidewell Plumbing job-card workflow — **not** the

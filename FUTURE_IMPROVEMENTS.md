@@ -6,6 +6,7 @@ it's a reference for when we pick the next thing to tackle.
 ---
 
 ## 1. Risk status / "blacklist" for non-paying customers
+*(Lower priority as of 2026-07-10 — still worth building, not urgent.)*
 
 A way to flag and reference chronic non-payers so the office can stop doing work
 (or extending credit) for them.
@@ -72,82 +73,33 @@ despite 6 contacts," not just "bad").
 
 ---
 
-## 9. OCR accuracy — 5-step improvement plan (staying on prebuilt-layout)
+## 2. Multi-user accountability + proactive reminders
+
+Two quiet assumptions today:
+- Every interaction is logged as "Admin" — no record of *who* actually chased.
+- The tool is passive — an overdue task only surfaces if someone opens the screen.
+
+**Ideas:**
+- Per-user identity on the log (login or a "who's logged in" selector) for trust and
+  handover. The `by` field already exists in the data model.
+- Active nudges — a daily "5 overdue" summary, desktop/email reminder — instead of
+  waiting to be checked.
+
+---
+
+## 3. OCR accuracy — 5-step improvement plan — closed 2026-07-10
 
 **Context:** OCR uses Azure Document Intelligence `prebuilt-layout` (REST, API
 `2024-11-30`, hard-coded in `src/services/documentIntelligence.js`). The prebuilt
 model itself can't be trained — it only improves when Microsoft ships a new
-`api-version`. Everything below improves the parts *we* control: what we feed it,
-what we request, and how we interpret the response. Ordered so each step feeds
-the next — measurement first.
+`api-version`.
 
-### Step 1 — Accuracy feedback loop — ✅ DONE 2026-07-04
-*(Implemented: `src/services/ocrAccuracy.js`, `ocrImport.snapshot` on both save paths in
-`OcrExtractionPanel.jsx`, "OCR accuracy" report section in Settings. The report compares
-snapshots against the job's live values, so later capture-flow edits count automatically.)*
-When a reviewed job is saved, store the original OCR-parsed values alongside the
-admin's final values (e.g. `ocrSnapshot` on the job record in `jobs.json`). Add a
-per-field accuracy readout ("Invoice number: 94% accepted unchanged, Materials:
-61%") in Settings or History.
-- Where: staged-review save path (`OcrExtractionPanel.jsx` / `stagedDocs.js`),
-  job schema via `storage.js`, one read-only aggregation for the report.
-- Why first: cheapest step (the data already flows through the save path; we just
-  stop discarding half of it) and it turns Steps 2–4 into measured decisions.
-
-### Step 2 — Scan-quality gate at ingest
-Use the `averageWordConfidence` already computed in
-`normalizeAnalyzeResult()` to flag weak scans immediately after OCR — a "low scan
-quality, consider rescanning" banner below a threshold (start ~0.85, tune with
-Step 1 data) plus per-field confidence colouring in the review UI.
-- Why: a bad scan currently looks identical to a good one until the admin starts
-  finding errors mid-review.
-
-### Step 3 — Consume layout data we already pay for: tables, selection marks, handwriting — ✅ DONE 2026-07-04
-*(Implemented: `normalizeAnalyzeResult()` now passes through `tables`, `selectionMarks`,
-`styles`, and flags each word `isHandwritten`. `jobCardParser.js` reads the five money
-fields from table rows first (label cell matched via the same keyMatchers, first
-digit-bearing cell to its right), falling back to keyValuePairs then regex; each field
-records its `source`. Handwritten values lose up to 20% confidence via `handwrittenShare`.)*
-Extend `normalizeAnalyzeResult()` to pass through `tables[]`, `selectionMarks`,
-and `styles` (currently dropped from every response). In `jobCardParser.js`: read
-the money fields (call-out fee, labour, materials, total) from the detected table
-when present — positional cells beat key-value guessing for that block — and use
-handwritten-span styles to discount confidence on handwriting-heavy fields.
-- Why: extraction quality gained from response data already in every API result —
-  no extra calls, no cost, no tier change.
-
-### Step 4 — Matcher-miss helper in Settings
-The `keyMatchers` in `ocrFieldConfig.js` are the ongoing tuning knob, but adding a
-variant means hand-writing regex. Keep the last N runs' *unmatched* keyValuePairs
-(keys layout found that mapped to no field), show them in the Settings field-config
-editor, and offer one-click "add as matcher for [field]".
-- Why: turns tuning from a developer task into a 10-second admin task — which is
-  what makes "improve over time" survive handover. Builds on Step 1's per-field
-  weakness data.
-
-### Step 5 — Preserve a labelled training set (keeps the custom-model exit cheap)
-Add a History export bundling, per job, the stored scan reference plus the final
-corrected field values (JSON alongside the existing Excel export). Nearly free once
-Step 1's snapshot exists.
-- Why: if prebuilt-layout plateaus despite Steps 1–4, this archive *is* the
-  training data for a custom Document Intelligence model — data collection goes
-  from a months-long project to already-done, without committing to anything now.
-
-**Sizing:** Steps 1, 2, 5 small (a focused session each); Steps 3, 4 medium.
-Order matters mainly for 1 → 4/5; Steps 2 and 3 can slot in anytime.
-
-**Non-local levers (outside the tool, noted for completeness):** redesign the
-printed job card with clearer labels/boxes (keyValuePairs accuracy is largely a
-function of form layout), scan at 300 DPI, and — once volume justifies a paid S0
-tier — the `queryFields` / `ocrHighResolution` add-on features.
-
----
-
-## Build order for dev-future-build
-
-| Phase | Feature | Reason |
-|---|---|---|
-| 1 | Message templates (7) | Self-contained, highest daily value, no dependencies |
-| 2 | Cross-reference A+B (8) | Enables dashboard to show richer data |
-| 3 | Home dashboard (6) | Most meaningful once cross-ref data exists |
-| 4 | Cross-reference C (8) | Needs real-world testing of A+B first |
+- **Step 1 — Accuracy feedback loop — ✅ DONE 2026-07-04.** `src/services/ocrAccuracy.js`,
+  `ocrImport.snapshot` on both save paths in `OcrExtractionPanel.jsx`, "OCR accuracy"
+  report section in Settings.
+- **Step 3 — Tables, selection marks, handwriting — ✅ DONE 2026-07-04.**
+  `normalizeAnalyzeResult()` passes through `tables`/`selectionMarks`/`styles`;
+  `jobCardParser.js` reads money fields from table rows first, discounts confidence
+  on handwritten spans.
+- **Steps 2 (scan-quality gate), 4 (matcher-miss helper), 5 (training-set export)
+  — reviewed 2026-07-10, not being pursued.** No further steps planned.
